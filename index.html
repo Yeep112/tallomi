@@ -1,0 +1,107 @@
+<!DOCTYPE html>
+<html lang="zh-Hant">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>下載 Tallomi 個人帳本</title>
+<style>
+  :root { --navy:#1b1b4b; --ink:#23233f; --lav:#e6e6fa; --brass:#b08a2e; --paper:#fbfbff; --line:#cfcfe8; }
+  * { box-sizing: border-box; }
+  body { margin:0; background:var(--lav); color:var(--ink); font:16px/1.7 -apple-system,"Segoe UI","Noto Sans TC","PingFang TC","Microsoft JhengHei",sans-serif; }
+  header { background:var(--navy); color:#fff; padding:28px 20px 30px; }
+  .wrap { max-width:920px; margin:0 auto; }
+  .brand { font:400 34px/1.2 Georgia,"Noto Serif TC",serif; letter-spacing:.5px; }
+  header p { margin:6px 0 0; color:#c9c9ee; }
+  main { padding:26px 20px 50px; }
+  .grid { display:grid; grid-template-columns: 1.5fr 1fr; gap:22px; align-items:start; }
+  @media (max-width:760px) { .grid { grid-template-columns:1fr; } }
+  .card { background:var(--paper); border:1px solid var(--line); border-radius:8px; padding:20px 22px; }
+  h2 { font-size:18px; margin:0 0 10px; }
+  .dl { display:inline-block; background:var(--navy); color:#fff; text-decoration:none; padding:13px 24px; border-radius:6px; font-weight:600; font-size:17px; }
+  .dl[aria-disabled="true"] { opacity:.5; pointer-events:none; }
+  .meta { color:#5b5b80; font-size:14px; margin:10px 0 0; }
+  ol { padding-left:22px; margin:8px 0 0; }
+  li { margin:7px 0; }
+  .note { border-left:4px solid var(--brass); background:#fbf6e6; padding:9px 13px; margin:14px 0 0; font-size:14.5px; border-radius:0 5px 5px 0; }
+  #qr { width:200px; max-width:100%; margin:6px auto 8px; }
+  #qr svg { width:100%; height:auto; display:block; }
+  .center { text-align:center; }
+  code { background:#eeeef9; padding:1px 6px; border-radius:4px; font-size:14px; }
+  .small { font-size:13px; color:#6a6a8e; word-break:break-all; }
+  ul.notes { margin:8px 0 0; padding-left:20px; font-size:14.5px; }
+  a { color:#2c2c9c; }
+</style>
+</head>
+<body>
+<header><div class="wrap">
+  <div class="brand">Tallomi</div>
+  <p>個人帳本　資料只存在你自己的裝置，不會傳給任何人</p>
+</div></header>
+<main><div class="wrap">
+  <div class="grid">
+    <div>
+      <section class="card center">
+        <h2>手機版</h2>
+        <div id="qr" role="img" aria-label="手機版的 QR code"></div>
+        <p class="meta">用手機掃描就能開啟。iPhone 請用 Safari，Android 請用 Chrome。</p>
+        <a class="dl" id="open-app" href="app/">在這支裝置開啟手機版</a>
+        <p class="small" id="here"></p>
+      </section>
+      <section class="card" style="margin-top:18px">
+        <h2>手機版怎麼用</h2>
+        <ol>
+          <li>第一次開啟要下載約 15 MB，等畫面出現「總覽」。之後沒有網路也能記帳。</li>
+          <li><b>加到主畫面</b>：iPhone 按 Safari 下方的「分享」→「加入主畫面」；Android 按瀏覽器選單的「安裝應用程式」。之後都從主畫面的圖示開啟。</li>
+          <li>到「設定 → PIN 鎖」可以設定 PIN，也可以再開啟 Face ID／指紋解鎖，都能隨時關閉。</li>
+          <li>帳本只存在你的手機裡，不會傳給任何人。請定期到「設定 → 備份與匯出」按「下載備份檔」，存到「檔案」或雲端硬碟。</li>
+        </ol>
+        <p class="note">換手機、清除瀏覽資料，或 iPhone 長時間沒開（沒有加到主畫面時），帳本都可能消失，所以備份很重要。有新版本時，畫面下方會出現「立即更新」，按一下就好，帳本不受影響。</p>
+        <p class="note">匯率與股價需要網路，而且手機瀏覽器擋掉了部分資料來源，查不到時請手動輸入；Google 試算表同步只有電腦版有。</p>
+      </section>
+    </div>
+    <div>
+      <section class="card">
+        <h2>Windows 電腦版</h2>
+        <a id="dl" class="dl" href="#" aria-disabled="true">下載最新版</a>
+        <p class="meta" id="meta">正在讀取最新版本…</p>
+        <ul class="notes" id="notes"></ul>
+      </section>
+      <section class="card" style="margin-top:18px">
+        <h2>安裝步驟</h2>
+        <ol>
+          <li>電腦要先裝好 <b>Python 3.12 或 3.13</b>（到 <a href="https://www.python.org/downloads/" rel="noopener">python.org</a> 下載，安裝時勾選「py launcher」）。</li>
+          <li>把下載的壓縮檔<b>解壓縮</b>（在檔案上按右鍵 → 全部解壓縮）。</li>
+          <li>在解壓縮後的資料夾，連按兩下 <code>install_pennyworth.bat</code>，等它跑完（第一次約一分鐘）。</li>
+          <li>桌面會出現蜂巢 T 圖示的 <b>Tallomi</b> 捷徑，連按兩下就能開始記帳。</li>
+        </ol>
+        <p class="note">第一次執行時，Windows 可能跳出「Windows 已保護您的電腦」。這是因為程式還沒有購買數位簽章。請按「<b>其他資訊</b>」→「<b>仍要執行</b>」。</p>
+        <p class="note">之後的更新會在電腦連網時<b>自動下載</b>，下次開啟時套用；更新前會先備份你的帳本。沒有網路時照常使用。</p>
+      </section>
+    </div>
+  </div>
+  <p class="small" id="sha" style="margin-top:22px"></p>
+</div></main>
+<script src="qrcode.js"></script>
+<script>
+(function () {
+  var here = location.href.split('#')[0].split('?')[0];
+  var app = new URL('app/', here).href;
+  document.getElementById('here').textContent = app;
+  try {
+    var q = qrcode(0, 'M'); q.addData(app); q.make();
+    document.getElementById('qr').innerHTML = q.createSvgTag({ cellSize: 4, margin: 2, scalable: true });
+  } catch (e) { document.getElementById('qr').textContent = '（無法產生 QR code）'; }
+  fetch('manifest.json', { cache: 'no-store' }).then(function (r) { return r.json(); }).then(function (m) {
+    var a = document.getElementById('dl');
+    a.href = m.download || m.zip; a.removeAttribute('aria-disabled'); a.textContent = '下載 Tallomi ' + m.version;
+    document.getElementById('meta').textContent = '版本 ' + m.version + '　發布日期 ' + m.released + '　' + Math.round(m.size / 1024) + ' KB';
+    var ul = document.getElementById('notes');
+    (m.notes || []).forEach(function (n) { var li = document.createElement('li'); li.textContent = n; ul.appendChild(li); });
+    document.getElementById('sha').textContent = '檔案指紋（SHA-256）：' + m.sha256;
+  }).catch(function () {
+    document.getElementById('meta').textContent = '暫時讀不到版本資訊，請稍後重新整理。';
+  });
+})();
+</script>
+</body>
+</html>

@@ -1,0 +1,15 @@
+{
+ "app": "pennyworth",
+ "version": "1.39.1",
+ "released": "2026-11-14",
+ "zip": "Pennyworth-1.39.1.zip",
+ "download": "Tallomi-1.39.1.zip",
+ "sha256": "aade581a4318eaa9d6b29b6d0c3e8e483a557c1db4cc3cbc9bd7e2032ae14ea5",
+ "size": 902631,
+ "notes": [
+  "手機版檢查頁"
+ ],
+ "min_version": "0",
+ "manual": false,
+ "bad_versions": []
+}
