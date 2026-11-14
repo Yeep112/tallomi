@@ -102,10 +102,22 @@ async function nudgeTile(kind, name, delta) {
   [names[i], names[j]] = [names[j], names[i]];
   await saveTileOrder(kind, names); renderRoute();
 }
-function categoryTile(name, amount, kind, editing, base) {
-  const l = catLook(name), pic = isPicture(l.icon);
-  return h('button', { type: 'button', class: 'tile' + (editing ? ' editing' : ''), style: pic ? '' : `--tile:${l.color}`, 'data-name': name,
-    'aria-label': editing ? `編輯類別「${name}」` : `${TYPE_LABEL[kind]}・${name}，本月 ${num(amount, base)}，點一下記一筆`,
+// The monthly budget on an expense tile: "預算 2,700" with a bar that fills as the month's spending approaches it (yellow from 80%, red once over).
+function tileBudget(name, kind, spent, base) {
+  const cap = Number((S.st.budgets || {})[name]);
+  if (kind !== 'expense' || !(cap > 0)) return null;
+  const used = Math.max(0, Number(spent) || 0), pct = Math.round(used / cap * 100), left = cap - used;
+  const tone = used > cap ? 'over' : pct >= 80 ? 'warn' : 'ok';
+  const text = used > cap ? `超支 ${num(used - cap, base)}` : `剩 ${num(left, base)}`;
+  return { tone, label: `預算 ${num(cap, base)}，已用 ${pct}%，${text}`,
+    el: h('span', { class: `tile-bud ${tone}` },
+      h('span', { class: 'tile-bar-track', 'aria-hidden': 'true' }, h('i', { style: `width:${Math.min(100, pct)}%` })),
+      h('small', { class: 'num' }, `預算 ${num(cap, base)}`, h('em', null, ` · ${text}`))) };
+}
+function categoryTile(name, amount, kind, editing, base, spent) {
+  const l = catLook(name), pic = isPicture(l.icon), bud = tileBudget(name, kind, spent, base);
+  return h('button', { type: 'button', class: 'tile' + (editing ? ' editing' : '') + (bud ? ' has-bud ' + bud.tone : ''), style: pic ? '' : `--tile:${l.color}`, 'data-name': name,
+    'aria-label': editing ? `編輯類別「${name}」` : `${TYPE_LABEL[kind]}・${name}，本月 ${num(amount, base)}${bud ? '，' + bud.label : ''}，點一下記一筆`,
     onclick: () => {
       if (Date.now() - (S.tileDragAt || 0) < 400) return;                    // the click that ends a drag
       if (editing) { openCategoryMenu(name, kind); return; }
@@ -114,7 +126,7 @@ function categoryTile(name, amount, kind, editing, base) {
       S.tileTap = { name, kind, timer: setTimeout(() => { S.tileTap = null; openQuickAdd({ type: kind, category: name }); }, 300) };
     } },
     editing ? h('span', { class: 'tile-edit', 'aria-hidden': 'true' }, '✎') : null,
-    h('span', { class: 'tile-name' }, name), chipEl(l.icon, l.color, 'xl'), h('b', { class: 'tile-amt num' }, num(amount, base)));
+    h('span', { class: 'tile-name' }, name), chipEl(l.icon, l.color, 'xl'), h('b', { class: 'tile-amt num' }, num(amount, base)), bud ? bud.el : null);
 }
 
 function addCategoryDialog(kind) {
@@ -154,7 +166,7 @@ async function overviewTiles() {
         h('span', null, `${TYPE_LABEL[kind]} `, h('b', { class: 'num ' + (kind === 'income' ? 'pos' : 'neg') }, num(g.total, base)), h('small', { class: 'muted' }, ` ${base}`)),
         h('span', { class: 'tile-chev', 'aria-hidden': 'true' }, shut ? '▸' : '▾')),
       shut ? null : h('div', { class: 'tile-grid', 'data-kind': kind },
-        tileOrder(names, info.usage, kind, (S.st.prefs.tile_order || {})[kind] || []).map((c) => categoryTile(c, by[c] || 0, kind, o.edit, base)),
+        tileOrder(names, info.usage, kind, (S.st.prefs.tile_order || {})[kind] || []).map((c) => categoryTile(c, by[c] || 0, kind, o.edit, base, (d.budget_spent || {})[c] || 0)),
         h('button', { type: 'button', class: 'tile add', 'aria-label': `新增${TYPE_LABEL[kind]}類別`, onclick: () => addCategoryDialog(kind) }, h('span', { class: 'tile-plus', 'aria-hidden': 'true' }, '＋'), h('span', { class: 'tile-name' }, '新增類別'))));
   };
   const root = h('div', { class: 'tiles' },

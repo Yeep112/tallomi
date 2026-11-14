@@ -154,9 +154,40 @@ function applyTemplate(m, t) {
   if (t.type === 'transfer') { if (usable(t.to_account_id)) m.to_account_id = t.to_account_id; } else m.to_account_id = m.to_account_id || null;
   m.to_amount = '';
 }
+// A template that asks for the amount (the setting, or no amount saved): tapping it opens a small box that asks only the amount and records
+// the entry. Any other template just fills the form, as before.
+const asksAmount = (t) => !!t.ask_amount || (!t.auto && !String(t.amount || '').trim());
+function useTemplate(m, t, redraw) {
+  if (!asksAmount(t)) { applyTemplate(m, t); redraw(true); return; }
+  askAmountDialog(m, t, redraw);
+}
+function askAmountDialog(m, t, redraw) {
+  const host = document.querySelector('dialog[open]');                    // the "add an entry" box the template was tapped in, if any (closed once the entry is recorded)
+  applyTemplate(m, t); m.amount = '';
+  const a = acct(m.account_id), ccy = a ? a.currency : S.st.base;
+  const suggest = String(t.amount || '').trim();
+  const input = h('input', { class: 'amt', name: 'ask_amount', inputmode: 'decimal', autocomplete: 'off', placeholder: suggest || '0', 'aria-label': '這次的金額' });
+  const fillForm = (dlg) => { dlg.close(); redraw(true); };               // not now: leave the template in the form to change anything first
+  const dlg = openDialog({
+    title: `${t.name}：這次多少？`,
+    body: h('div', { class: 'rows', style: 'padding:0;max-width:none' },
+      h('p', { class: 'hint', style: 'margin:0' }, `${TYPE_LABEL[t.type]}${t.category ? '　' + t.category : ''}　${a ? a.name : ''}${t.note ? '　' + t.note : ''}`),
+      h('label', { class: 'field' }, h('span', null, `金額（${ccy}）`), input),
+      suggest ? h('div', null, h('button', { class: 'btn sm ghost', type: 'button', onclick: () => { input.value = suggest; input.form.requestSubmit(); } }, `用上次的 ${suggest}`)) : null),
+    extraFoot: h('button', { class: 'btn ghost', type: 'button', style: 'margin-right:auto', onclick: () => fillForm(dlg) }, '改用完整表單'),
+    primary: { label: '記下', run: async () => {
+      const v = input.value.trim();
+      if (!v) throw new Error('請輸入這次的金額');
+      m.amount = v;
+      await recordEntry(m);
+      await refresh();
+      if (host && host.isConnected) host.close();
+    } } });
+  return dlg;
+}
 // 清除帶入資料: empty everything a template (or typing) filled in. The kind, the account, the day and any photos stay.
 function clearFilled(m) {
-  Object.assign(m, { amount: '', to_amount: '', note: '', category: '', tags: pinnedTags(), advance: '', counterparty: '', due: '', no_budget: false, no_stats: false, save_tpl: false });
+  Object.assign(m, { amount: '', to_amount: '', note: '', category: '', tags: pinnedTags(), advance: '', counterparty: '', due: '', no_budget: false, no_stats: false, save_tpl: false, tpl_ask: false, repeat: false });
 }
 function clearButton(m, redraw) {
   return h('button', { class: 'btn sm ghost', type: 'button', title: '把金額、類別、備註、標籤、代墊設定都清空，重新開始（類型、帳戶、日期不變）',
@@ -164,7 +195,7 @@ function clearButton(m, redraw) {
 }
 function templatePayload(m, name) {
   return { name, type: m.type, category: m.type === 'transfer' ? '' : m.category, note: m.note, amount: String(m.amount || '').replace(/,/g, ''), account_id: m.account_id, to_account_id: m.type === 'transfer' ? m.to_account_id : null,
-    tags: m.tags || '', advance: m.type === 'expense' ? (m.advance || '') : '', counterparty: m.counterparty || '', no_budget: !!m.no_budget, no_stats: !!m.no_stats };
+    tags: m.tags || '', advance: m.type === 'expense' ? (m.advance || '') : '', counterparty: m.counterparty || '', no_budget: !!m.no_budget, no_stats: !!m.no_stats, ask_amount: !!m.tpl_ask };
 }
 // Save the entry being typed as a quick template (the same kind of entry is updated instead of added twice).
 async function saveEntryAsTemplate(m) {
@@ -179,7 +210,7 @@ function openTemplateManager(m, redraw) {
   const q = h('input', { type: 'search', placeholder: '搜尋範本或記過的交易', 'aria-label': '搜尋', autocomplete: 'off' });
   const box = h('div', { class: 'tpl-manage' });
   let past = null, changed = false, dlg = null, hiddenN = 0;
-  const text = (t) => `${TYPE_LABEL[t.type]}${t.category ? '　' + t.category : ''}${t.amount ? '　' + t.amount : ''}${t.advance ? '　' + ADV_LABEL[t.advance] + '·' + t.counterparty : ''}`;
+  const text = (t) => `${TYPE_LABEL[t.type]}${t.category ? '　' + t.category : ''}${asksAmount(t) ? '　每次問金額' + (t.amount ? '（上次 ' + t.amount + '）' : '') : t.amount ? '　' + t.amount : ''}${t.advance ? '　' + ADV_LABEL[t.advance] + '·' + t.counterparty : ''}`;
   const hit = (t, k) => !k || `${t.name} ${t.note} ${t.category} ${t.counterparty} ${t.tags}`.toLowerCase().includes(k);
   const fill = (t) => { dlg.close(); applyTemplate(m, t); redraw(true); toast('已帶入表單，確認後按「記下」才會記入'); };
   const row = (t, ...btns) => h('div', { class: 'tpl-row' + (t.auto ? '' : ' saved'), 'data-id': t.auto ? null : String(t.id) },
@@ -232,14 +263,21 @@ function openTemplateManager(m, redraw) {
     };
     document.addEventListener('pointermove', move, { passive: false }); document.addEventListener('pointerup', up); document.addEventListener('pointercancel', up);
   };
-  const rename = (t) => {
+  const rename = (t) => {                                                  // name, amount, and whether tapping it asks for the amount
     const name = h('input', { maxlength: 30, autocomplete: 'off', value: t.name, 'aria-label': '範本名稱' });
-    openDialog({ title: '範本改名', body: h('div', { class: 'rows', style: 'padding:0;max-width:none' }, h('label', { class: 'field' }, h('span', null, '範本名稱'), name)),
+    const amount = h('input', { inputmode: 'decimal', autocomplete: 'off', value: t.amount || '', placeholder: '留空 = 每次問金額', 'aria-label': '範本金額' });
+    const ask = h('input', { type: 'checkbox', checked: asksAmount(t) });
+    openDialog({ title: '編輯範本', body: h('div', { class: 'rows', style: 'padding:0;max-width:none' },
+      h('label', { class: 'field' }, h('span', null, '範本名稱'), name),
+      h('label', { class: 'field' }, h('span', null, '金額'), amount),
+      h('label', { class: 'row-inline' }, ask, h('span', null, '點這個範本時先問金額（填的金額只當作「用上次的…」的建議）')),
+      h('p', { class: 'hint', style: 'margin:0' }, '不勾選：點一下就把金額填進表單。勾選或金額留空：點一下會跳出只問金額的小視窗，輸入後直接記下。')),
       primary: { label: '儲存', run: async () => {
         const nm = name.value.trim(); if (!nm) throw new Error('請幫範本取個名字');
         const { id, ...rest } = t;
-        await api('PUT', `/api/templates/${t.id}`, { ...rest, name: nm });
-        t.name = nm; changed = true; paint();
+        const amt = amount.value.replace(/,/g, '').trim();
+        await api('PUT', `/api/templates/${t.id}`, { ...rest, name: nm, amount: amt, ask_amount: ask.checked || !amt });
+        t.name = nm; t.amount = amt; t.ask_amount = ask.checked || !amt; changed = true; paint();
       } } });
   };
   const paint = () => {
@@ -248,7 +286,7 @@ function openTemplateManager(m, redraw) {
     box.replaceChildren(
       h('h4', { class: 'tpl-h' }, `我的範本（${saved.length}）`),
       ...(saved.length ? saved.map((t) => row(t,
-        h('button', { class: 'btn sm ghost', type: 'button', onclick: () => rename(t) }, '改名'),
+        h('button', { class: 'btn sm ghost', type: 'button', onclick: () => rename(t) }, '編輯'),
         h('button', { class: 'btn sm ghost', type: 'button', onclick: async () => {
           try { await api('DELETE', `/api/templates/${t.id}`); S.st.templates = S.st.templates.filter((x) => x.id !== t.id); changed = true; load(); } catch (e) { fail(e); }
         } }, '刪除'))) : [h('p', { class: 'hint' }, k ? '沒有符合的範本。' : '還沒有範本。記帳時勾選「記下後存成範本」，或從下面記過的交易按「存成範本」。')]),
@@ -282,19 +320,23 @@ function templateBar(m, redraw) {
   const list = S.st.templates || [];
   const past = (S.st.frequent || []).filter((t) => t.type === m.type || !m.type);       // typed before: offered without saving anything
   const chip0 = (t) => h('button', { type: 'button', class: 'tpl-chip' + (t.auto ? ' auto' : ''),
-    title: `${t.auto ? `記過 ${t.count} 次：` : ''}${t.name}：${TYPE_LABEL[t.type]}${t.category ? '　' + t.category : ''}${t.amount ? '　' + t.amount : ''}`,
-    onclick: () => { applyTemplate(m, t); redraw(true); } }, t.type === 'expense' || t.type === 'income' ? catChip(t.category || '未分類', 'sm') : null, t.name, t.amount ? h('i', null, t.amount) : null);
+    title: `${t.auto ? `記過 ${t.count} 次：` : ''}${t.name}：${TYPE_LABEL[t.type]}${t.category ? '　' + t.category : ''}${asksAmount(t) ? '　點一下會先問金額' : t.amount ? '　' + t.amount : ''}`,
+    onclick: () => useTemplate(m, t, redraw) }, t.type === 'expense' || t.type === 'income' ? catChip(t.category || '未分類', 'sm') : null, t.name, asksAmount(t) ? h('i', { class: 'ask' }, '問金額') : t.amount ? h('i', null, t.amount) : null);
   const chip = (t) => !t.auto ? chip0(t) : h('span', { class: 'tpl-chip-wrap' }, chip0(t),
     h('button', { type: 'button', class: 'tpl-x', title: '不要再顯示這個', 'aria-label': `不要再顯示「${t.name}」`, onclick: async () => {
       try { await api('POST', '/api/frequent/hide', { key: t.key }); S.st.frequent = (S.st.frequent || []).filter((x) => x.key !== t.key); toast('不會再顯示這個；想找回來，到「管理」按「恢復全部」'); redraw(); } catch (e) { fail(e); }
     } }, '×'));
+  const askBox = h('input', { type: 'checkbox', checked: !!m.tpl_ask, disabled: !m.save_tpl, onchange: (e) => { m.tpl_ask = e.target.checked; } });
   return h('div', { class: 'tpl-bar', role: 'group', 'aria-label': '快速範本' },
     h('span', { class: 'tpl-label' }, '範本'),
     h('span', { class: 'tpl-chips' }, list.map(chip), past.length ? h('span', { class: 'tpl-sep', title: '以前記過的交易，點一下就帶入', 'aria-label': '以前記過的' }, '記過') : null, past.map(chip),
       list.length || past.length ? null : h('span', { class: 'hint' }, '記過的交易會自動出現在這裡，點一下就帶入')),
     h('span', { class: 'tpl-tools' },
     h('label', { class: 'tpl-save', title: '輸入好這筆交易後勾選，按「記下」時會一併存成快速範本' },
-      h('input', { type: 'checkbox', checked: !!m.save_tpl, onchange: (e) => { m.save_tpl = e.target.checked; } }), '記下後存成範本'),
+      h('input', { type: 'checkbox', checked: !!m.save_tpl, onchange: (e) => { m.save_tpl = e.target.checked; askBox.disabled = !m.save_tpl; } }), '記下後存成範本'),
+    h('label', { class: 'tpl-save', title: '存成的範本以後點一下會先問金額，不會直接帶入這次的金額' }, askBox, '每次問金額'),
+    h('label', { class: 'tpl-save', title: '記下這一筆後，之後每個月同一天自動再記一筆（房租、訂閱、保費…）。到「設定 → 定期交易」可以暫停或修改。' },
+      h('input', { type: 'checkbox', checked: !!m.repeat, onchange: (e) => { m.repeat = e.target.checked; } }), '之後每月自動記'),
     h('button', { class: 'btn sm ghost', type: 'button', onclick: () => openTemplateManager(m, redraw) }, '管理'),
     clearButton(m, redraw)));
 }

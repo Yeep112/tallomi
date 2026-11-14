@@ -611,14 +611,14 @@ td.name .cico { margin-right: 8px; }
 /* monthly budget bars on the overview */
 .bud-card .rows { display: grid; gap: 14px; }
 .bud-row { --bud: var(--primary); }
-.bud-row.warn { --bud: #D69E2E; } .bud-row.over { --bud: var(--neg); }
+.bud-row.warn { --bud: #D69E2E; } .bud-row.over { --bud: var(--expense); }
 .bud-top { display: flex; align-items: center; gap: 8px; }
 .bud-top b { flex: 1 1 auto; min-width: 0; overflow-wrap: anywhere; }
 .bud-nums { flex: 0 0 auto; font-variant-numeric: tabular-nums; font-size: 14px; }
 .bud-bar { height: 10px; border-radius: 5px; background: var(--line-2); overflow: hidden; margin: 6px 0 3px; }
 .bud-bar i { display: block; height: 100%; background: var(--bud); border-radius: 5px; transition: width .3s; }
 .bud-note { font-size: 12.5px; color: var(--ink-3); }
-.bud-row.over .bud-note { color: var(--neg); }
+.bud-row.over .bud-note { color: var(--expense); }
 @media (prefers-reduced-motion: reduce) { .bud-bar i { transition: none; } }
 /* phone: the report chart-type buttons share the full width instead of running off the edge */
 @media (max-width: 720px) {
@@ -630,7 +630,7 @@ td.name .cico { margin-right: 8px; }
 .ab-folder { display: flex; flex-wrap: wrap; gap: 8px; align-items: flex-end; }
 .ab-folder .field { flex: 1 1 260px; }
 .ab-status { font-size: 13px; color: var(--ink-3); display: grid; gap: 2px; }
-.ab-status .bad { color: var(--neg); }
+.ab-status .bad { color: var(--expense); }
 .bk-tag { display: inline-block; margin-left: 6px; padding: 0 6px; font-size: 11.5px; border-radius: 8px; background: var(--hover); color: var(--ink-2); }
 
 /* transactions by day / month / year */
@@ -676,6 +676,14 @@ td.name .cico { margin-right: 8px; }
 .tile:active { transform: scale(.98); }
 .tile:focus-visible { outline: 3px solid var(--focus); outline-offset: 2px; }
 .tile-name { font-size: 17px; font-weight: 500; }
+.tile-bud { --bud: var(--income); display: grid; gap: 4px; width: 88%; justify-items: center; }
+.tile-bud.warn { --bud: #D69E2E; } .tile-bud.over { --bud: var(--expense); }
+.tile-bar-track { display: block; width: 100%; height: 7px; border-radius: 4px; background: color-mix(in srgb, var(--ink-3) 22%, transparent); overflow: hidden; }
+.tile-bar-track i { display: block; height: 100%; border-radius: 4px; background: var(--bud); }
+.tile-bud small { font-size: 12.5px; color: var(--ink-2, var(--ink)); line-height: 1.25; }
+.tile-bud em { font-style: normal; color: var(--bud); font-weight: 600; }
+.tile.has-bud.over { box-shadow: 0 0 0 2px color-mix(in srgb, var(--expense) 55%, transparent), 0 8px 18px -12px color-mix(in srgb, var(--tile) 70%, #000); }
+.tpl-chip i.ask { font-style: normal; font-size: 11px; opacity: .8; }
 .tile-amt { font-size: 22px; font-weight: 700; letter-spacing: .2px; }
 .tile .cico.xl { --chip: 56px; }
 .tile.add { background: transparent; border: 2px dashed var(--line); box-shadow: none; color: var(--ink-3); }
@@ -888,3 +896,4 @@ html.phone #sync-line { display: none; }
 #view.loading::before { content: ""; display: block; height: 3px; margin: 0 0 6px; border-radius: 2px; background: linear-gradient(90deg, transparent, var(--brass, #D9B45B), transparent); background-size: 40% 100%; background-repeat: no-repeat; animation: viewload 1s ease-in-out infinite; }
 @keyframes viewload { from { background-position: -40% 0; } to { background-position: 140% 0; } }
 @media (prefers-reduced-motion: reduce) { #view.loading::before { animation: none; background-size: 100% 100%; } }
+.tpl-chip { white-space: nowrap; }

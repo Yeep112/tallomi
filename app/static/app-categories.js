@@ -47,12 +47,12 @@ function openCategoryRename(name) {
 
 function openBudget(name) {
   const cur = S.st.budgets[name];
-  const input = h('input', { name: 'budget', inputmode: 'decimal', autocomplete: 'off', value: cur ? String(cur) : '', placeholder: '例如 6000', 'aria-label': '每月預算' });
+  const input = h('input', { name: 'budget', inputmode: 'decimal', autocomplete: 'off', value: cur ? String(cur) : '', placeholder: '例如 2700、2.7k 或 2k7', 'aria-label': '每月預算' });
   openDialog({
     title: `每月預算：${name}`,
     body: h('div', { class: 'rows', style: 'padding:0;max-width:none' },
       h('label', { class: 'field' }, h('span', null, `每月上限（${S.st.base}）`), input),
-      h('p', { class: 'hint', style: 'margin:0' }, '只計算這個類別當月的「支出」（轉帳不算）。總覽會顯示進度條：用到 80% 轉黃色、超過上限轉紅色。留空代表不設預算。')),
+      h('p', { class: 'hint', style: 'margin:0' }, '只計算這個類別當月的「支出」（轉帳不算）。總覽的類別磚塊上會直接顯示預算和剩餘，進度條用到 80% 轉黃色、超過上限轉紅色。可以用簡寫：2k7 = 2,700、1.5萬 = 15,000。留空代表不設預算。')),
     primary: { label: '儲存', run: async () => { await api('PUT', '/api/budgets', { category: name, amount: input.value }); await afterChange(input.value.trim() ? '已設定預算' : '已移除預算'); } },
   });
 }

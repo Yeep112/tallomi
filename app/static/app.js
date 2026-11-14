@@ -492,9 +492,12 @@ async function recordEntry(m) {
   else if (m.photos && m.photos.length) lost = await uploadPhotos(made.id, m);
   let tplMsg = '';
   if (m.save_tpl) { try { tplMsg = `，已${await saveEntryAsTemplate(m)}範本`; } catch (e) { toast(`交易已記下，但範本沒存成功：${e.message || e}`, true); } }
-  if (!made.queued) toast(`已記下${m.advance ? ADV_LABEL[m.advance] + '的' : ''}${TYPE_LABEL[m.type]}　${num(Number(String(m.amount).replace(/,/g, '')), a ? a.currency : 'TWD')} ${a ? a.currency : ''}　${a ? a.name : ''}${tplMsg}`);
+  let repMsg = '';
+  if (m.repeat && !made.queued) { try { repMsg = `，之後每月 ${Number(((m.time ? String(m.time) : nowLocal()).slice(8, 10)))} 日自動記（下一次 ${await createRepeatRule(m)}）`; } catch (e) { toast(`交易已記下，但定期交易沒建成功：${e.message || e}`, true); } }
+  else if (m.repeat) toast('離線時沒辦法設定定期交易；電腦連上後再到「設定 → 定期交易」新增', true);
+  if (!made.queued) toast(`已記下${m.advance ? ADV_LABEL[m.advance] + '的' : ''}${TYPE_LABEL[m.type]}　${num(Number(String(m.amount).replace(/,/g, '')), a ? a.currency : 'TWD')} ${a ? a.currency : ''}　${a ? a.name : ''}${tplMsg}${repMsg}`);
   if (lost) toast(`有 ${lost} 張照片沒存成功，交易本身已記下；可以到編輯再加一次`, true);
-  Object.assign(m, { amount: '', to_amount: '', note: '', category: '', tags: pinnedTags(), time: '', advance: '', counterparty: '', due: '', no_budget: false, no_stats: false, save_tpl: false });
+  Object.assign(m, { amount: '', to_amount: '', note: '', category: '', tags: pinnedTags(), time: '', advance: '', counterparty: '', due: '', no_budget: false, no_stats: false, save_tpl: false, tpl_ask: false, repeat: false });
   watchSync();
   return made;
 }
@@ -552,7 +555,7 @@ async function viewOverview(view) {
   const tiles = await overviewTiles();
   view.append(
     h('div', { class: 'page-head' }, h('h1', null, '總覽', eyeButton('overview'))),
-    tiles, owedBanner() || '',
+    tiles, recurringBanner() || '', owedBanner() || '',
     h('div', { class: 'worth' },
       h('div', null, h('div', { class: 'label' }, `總資產（${base}）`), h('div', { class: 'big' }, num(s.total, base), h('small', null, base))),
       h('div', { class: 'month' },
@@ -1092,6 +1095,7 @@ async function viewSettings(view) {
         h('button', { class: 'btn', onclick: async (e) => { e.target.disabled = true; try { const r = await api('POST', '/api/rates/refresh'); await afterChange(`已更新 ${r.updated.join('、') || '無'}${r.missing.length ? `；查不到 ${r.missing.join('、')}` : ''}`); } catch (er) { fail(er); e.target.disabled = false; } } }, '從網路更新匯率')) : null,
       h('p', { class: 'hint', style: 'margin:0' }, '報表使用「目前」匯率換算，之後改匯率，過去月份的換算金額也會跟著變。帳戶自己的餘額不受影響。'))));
 
+  view.append(recurringSection());                           // the owner PC, a paired phone and the phone version all have it
   if (st.remote) {         // a paired phone: appearance + currency only. Files, backups and the Google connection stay on the computer.
     view.append(h('section', { class: 'section' }, h('div', { class: 'section-head' }, h('h2', null, '這支手機')),
       h('div', { class: 'rows' }, h('p', { class: 'hint', style: 'margin:0' }, '你正在用手機連到家裡電腦上的 Tallomi。Google 試算表、匯入匯出、備份與手機管理只能在電腦上操作。'),
