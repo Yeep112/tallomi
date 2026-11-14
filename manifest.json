@@ -1,13 +1,13 @@
 {
  "app": "pennyworth",
- "version": "1.39.2",
+ "version": "1.39.3",
  "released": "2026-11-14",
- "zip": "Pennyworth-1.39.2.zip",
- "download": "Tallomi-1.39.2.zip",
- "sha256": "f2a37c05676759f5f3a0cff63785326a3f701cddda9ede5a957f903c43844615",
- "size": 903642,
+ "zip": "Pennyworth-1.39.3.zip",
+ "download": "Tallomi-1.39.3.zip",
+ "sha256": "959279d1b2c719715a90428c2b2bfa49a5d505eb1067411124e2c0d2b901d4e1",
+ "size": 903764,
  "notes": [
-  "手機版改用 Python 3.13 引擎"
+  "手機版加到主畫面不再 404"
  ],
  "min_version": "0",
  "manual": false,
