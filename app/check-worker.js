@@ -19,7 +19,7 @@ self.addEventListener('message', async (ev) => {
       say(`Python ${py.runPython('import sys; sys.version.split()[0]')} 啟動成功，1+1=${py.runPython('1+1')}；${mem}`); return;
     }
     if (t === 'packages') {
-      await py.loadPackage(['jinja2', 'markupsafe', 'click', 'pyodide-http']);
+      await py.loadPackage(['sqlite3', 'ssl', 'jinja2', 'markupsafe', 'click', 'pyodide-http']);
       say('套件載入成功'); return;
     }
   } catch (e) { fail(e); }

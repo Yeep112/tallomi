@@ -25,7 +25,7 @@ async function boot() {
   }
   say('stage', '載入程式…');
   py = await loadPyodide({ indexURL: new URL('./pyodide/', import.meta.url).href });
-  await py.loadPackage(['jinja2', 'markupsafe', 'click', 'pyodide-http']);
+  await py.loadPackage(['sqlite3', 'ssl', 'jinja2', 'markupsafe', 'click', 'pyodide-http']);
   py.FS.mkdirTree('/tmp/w');
   for (const w of ['flask', 'werkzeug', 'blinker', 'itsdangerous']) {
     const list = self.__wheels.filter((n) => n.startsWith(w + '-'));
