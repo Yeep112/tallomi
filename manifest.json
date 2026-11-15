@@ -1,13 +1,13 @@
 {
  "app": "pennyworth",
- "version": "1.40.0",
- "released": "2026-11-14",
- "zip": "Pennyworth-1.40.0.zip",
- "download": "Tallomi-1.40.0.zip",
- "sha256": "3d0d480c3410e4b5e8eb5cf0ee92e17a2a5183514a861bbaa19963a402f3e378",
- "size": 915575,
+ "version": "1.41.1",
+ "released": "2026-11-15",
+ "zip": "Pennyworth-1.41.1.zip",
+ "download": "Tallomi-1.41.1.zip",
+ "sha256": "f5454540b5865c74f696f226e837ed1a23cabffcdb36fc707820a8a1a78db237",
+ "size": 928438,
  "notes": [
-  "定期交易、範本問金額、預算顯示在磚塊上"
+  "分帳：手機版面、常一起的朋友"
  ],
  "min_version": "0",
  "manual": false,

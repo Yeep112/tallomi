@@ -8,6 +8,7 @@ const ADV_STATE = { open: '待收', partial: '收了一部分', done: '已收齊
 // ---- the part of the entry form that makes an expense an advance
 function knownParties() {
   const set = new Set();
+  ((S.st.friend_names || {}).friends || []).forEach((n) => set.add(n));
   (S.st.owed || []).forEach((g) => set.add(g.counterparty));
   (S.st.templates || []).forEach((t) => t.counterparty && set.add(t.counterparty));
   return [...set];
@@ -16,20 +17,35 @@ function advanceField(m, redraw) {
   if (m.type !== 'expense') return null;
   const kind = m.advance || '';
   const pick = h('select', { 'aria-label': '這筆是不是代墊', onchange: (e) => {
+    if (e.target.value === 'split') {                                       // several friends, each pays back on their own: the bill box
+      e.target.value = m.advance || '';
+      openBillDialog({ account_id: m.account_id, time: m.time, category: m.category, note: m.note });
+      return;
+    }
     m.advance = e.target.value;
     if (m.advance) { m.no_budget = true; m.no_stats = true; } else { m.counterparty = ''; m.no_budget = false; m.no_stats = false; }     // sensible defaults, still changeable
     redraw();
-  } }, [['', '自己的支出'], ['friend', '幫朋友付（之後向他收）'], ['claim', '先付款，之後報帳']].map(([v, l]) => h('option', { value: v, selected: v === kind }, l)));
+  } }, [['', '自己的支出'], ['friend', '幫朋友付（之後向他收）'], ['split', '幫大家付，每人各自還（分帳）…'], ['claim', '先付款，之後報帳']].map(([v, l]) => h('option', { value: v, selected: v === kind }, l)));
   const out = [h('label', { class: 'field half' }, h('span', null, '這筆是'), pick)];
   if (kind) {
     const names = h('datalist', { id: 'adv-names' }, knownParties().map((n) => h('option', { value: n })));
     out.push(h('label', { class: 'field half' }, h('span', null, kind === 'friend' ? '幫誰付的' : '向誰報帳（公司、客戶…）'),
       h('input', { name: 'counterparty', autocomplete: 'off', maxlength: 40, list: 'adv-names', value: m.counterparty || '', placeholder: kind === 'friend' ? '朋友的名字' : '例如：公司', 'aria-label': '對象', oninput: (e) => { m.counterparty = e.target.value; } }), names));
     const ymdPlus = (n) => { const d = new Date(); d.setDate(d.getDate() + n); return `${d.getFullYear()}-${String(d.getMonth() + 1).padStart(2, '0')}-${String(d.getDate()).padStart(2, '0')}`; };
-    const due = h('input', { type: 'date', name: 'due', value: m.due || '', 'aria-label': '預計收回日', oninput: (e) => { m.due = e.target.value; } });
+    const due = h('input', { type: 'date', name: 'due', value: m.due || '', 'aria-label': '預計收回日', oninput: (e) => { m.due = e.target.value; }, onchange: () => { if (!m.due) m.auto_settle = ''; redraw(); } });
     out.push(h('div', { class: 'field half adv-due' }, h('span', null, '預計收回日（選填）'), due,
-      h('span', { class: 'adv-quick' }, [[7, '一週後'], [14, '兩週後'], [30, '一個月後']].map(([n, l]) => h('button', { type: 'button', class: 'btn sm ghost', onclick: () => { m.due = ymdPlus(n); due.value = m.due; } }, l)),
-        m.due ? h('button', { type: 'button', class: 'btn sm ghost', onclick: () => { m.due = ''; due.value = ''; } }, '不設') : null)));
+      h('span', { class: 'adv-quick' }, [[7, '一週後'], [14, '兩週後'], [30, '一個月後']].map(([n, l]) => h('button', { type: 'button', class: 'btn sm ghost', onclick: () => { m.due = ymdPlus(n); due.value = m.due; redraw(); } }, l)),
+        m.due ? h('button', { type: 'button', class: 'btn sm ghost', onclick: () => { m.due = ''; due.value = ''; m.auto_settle = ''; redraw(); } }, '不設') : null)));
+    if (m.due) {
+      const orig = acct(m.account_id), same = activeAccounts().filter((a) => orig && a.currency === orig.currency);
+      const on = !!m.auto_settle;
+      out.push(h('div', { class: 'field grow adv-auto' },
+        h('label', { class: 'tally-toggle' }, h('input', { type: 'checkbox', checked: on, onchange: (e) => { m.auto_settle = e.target.checked ? ((same.find((a) => a.id === m.account_id) || same[0] || {}).id || '') : ''; redraw(); } }),
+          h('span', null, '到了預計收回日，自動記成已收款（不用再按「收款」）')),
+        on ? h('label', { class: 'adv-auto-acct' }, h('span', { class: 'hint' }, '入帳到　'), h('select', { 'aria-label': '自動入帳的帳戶', onchange: (e) => { m.auto_settle = +e.target.value; } },
+          same.map((a) => h('option', { value: a.id, selected: a.id === Number(m.auto_settle) }, a.name)))) : null,
+        on ? h('span', { class: 'hint' }, `${m.due} 當天（或之後第一次打開程式時）會自動記一筆收款，這筆就結案。收款不算收入。`) : null));
+    }
     out.push(h('div', { class: 'field grow adv-opts' },
       h('label', { class: 'tally-toggle' }, h('input', { type: 'checkbox', checked: !!m.no_budget, onchange: (e) => { m.no_budget = e.target.checked; } }), h('span', null, '不計入預算')),
       h('label', { class: 'tally-toggle' }, h('input', { type: 'checkbox', checked: !!m.no_stats, onchange: (e) => { m.no_stats = e.target.checked; } }), h('span', null, '不計入收支統計與報表')),
@@ -103,9 +119,11 @@ async function viewAdvances(view) {
   const tab = S.advTab || (S.advTab = 'open'), kindF = S.advKind || (S.advKind = '');
   const d = await api('GET', `/api/advances?state=${tab}`);
   const items = d.items.filter((x) => !kindF || x.advance === kindF);
+  const bills = kindF === 'claim' ? [] : (d.bills || []);                  // split bills are always paid-for-friends
   const money1 = (list) => list.map((r) => `${num(r.amount, r.currency)} ${r.currency}`).join('、');
   view.append(h('div', { class: 'page-head' }, h('div', null, h('h1', null, '代墊與報帳', eyeButton('advances')),
-    h('p', { class: 'sub' }, '幫朋友先付錢，或自己先墊、之後要報帳的花費，記在這裡追蹤。記帳時把「這筆是」改成「幫朋友付」或「先付款，之後報帳」就會出現；對方還錢時按「收款」沖銷。記帳時可填預計收回日，逾期會在這裡、總覽和左邊選單提醒。'))));
+    h('p', { class: 'sub' }, '幫朋友先付錢，或自己先墊、之後要報帳的花費，記在這裡追蹤。一桌人一起吃飯由你先付，按「分帳」一次記下每個人的份；對方還錢時按「收款」，選轉進哪個帳戶。報帳可以設預計收到款項的日期，到那天自動記成已收款。逾期會在這裡、總覽和左邊選單提醒。')),
+    h('div', { class: 'page-actions' }, h('button', { class: 'btn primary', type: 'button', onclick: () => openBillDialog({}) }, '＋ 分帳'))));
   if (tab === 'open') {
     const parties = d.by_party.filter((g) => !kindF || g.advance === kindF);
     view.append(h('section', { class: 'section' }, parties.length
@@ -142,13 +160,14 @@ async function viewAdvances(view) {
   view.append(h('section', { class: 'section' },
     h('div', { class: 'section-head' }, h('h2', null, tab === 'open' ? '待收的款項' : '已結清'),
       h('span', { class: 'head-btns' }, seg([['open', '待收'], ['done', '已結清']], tab, (k) => { S.advTab = k; }, '狀態'), seg([['', '全部'], ['friend', '朋友'], ['claim', '報帳']], kindF, (k) => { S.advKind = k; }, '種類'))),
-    items.length ? h('div', { class: 'adv-list' }, items.map(row)) : h('div', { class: 'empty' }, h('b', null, tab === 'open' ? '沒有待收的項目' : '還沒有結清的項目'))));
+    bills.length ? h('div', { class: 'bill-list' }, bills.map((b) => billCard(b, row))) : null,
+    items.length ? h('div', { class: 'adv-list' }, items.map(row)) : (bills.length ? null : h('div', { class: 'empty' }, h('b', null, tab === 'open' ? '沒有待收的項目' : '還沒有結清的項目')))));
 }
 
 // ---- quick templates: a favourite entry that fills the form with one tap
 function applyTemplate(m, t) {
   const usable = (id) => id && acct(id) && !acct(id).archived;
-  Object.assign(m, { type: t.type, category: t.category || '', note: t.note || '', amount: t.amount || '', tags: t.tags || '', advance: t.advance || '', counterparty: t.counterparty || '', due: '',
+  Object.assign(m, { type: t.type, category: t.category || '', note: t.note || '', amount: t.amount || '', tags: t.tags || '', advance: t.advance || '', counterparty: t.counterparty || '', due: '', auto_settle: '',
     no_budget: !!t.no_budget, no_stats: !!t.no_stats });
   if (usable(t.account_id)) m.account_id = t.account_id;
   if (t.type === 'transfer') { if (usable(t.to_account_id)) m.to_account_id = t.to_account_id; } else m.to_account_id = m.to_account_id || null;
@@ -187,7 +206,7 @@ function askAmountDialog(m, t, redraw) {
 }
 // 清除帶入資料: empty everything a template (or typing) filled in. The kind, the account, the day and any photos stay.
 function clearFilled(m) {
-  Object.assign(m, { amount: '', to_amount: '', note: '', category: '', tags: pinnedTags(), advance: '', counterparty: '', due: '', no_budget: false, no_stats: false, save_tpl: false, tpl_ask: false, repeat: false });
+  Object.assign(m, { amount: '', to_amount: '', note: '', category: '', tags: pinnedTags(), advance: '', counterparty: '', due: '', auto_settle: '', no_budget: false, no_stats: false, save_tpl: false, tpl_ask: false, repeat: false });
 }
 function clearButton(m, redraw) {
   return h('button', { class: 'btn sm ghost', type: 'button', title: '把金額、類別、備註、標籤、代墊設定都清空，重新開始（類型、帳戶、日期不變）',

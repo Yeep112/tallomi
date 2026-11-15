@@ -897,3 +897,46 @@ html.phone #sync-line { display: none; }
 @keyframes viewload { from { background-position: -40% 0; } to { background-position: 140% 0; } }
 @media (prefers-reduced-motion: reduce) { #view.loading::before { animation: none; background-size: 100% 100%; } }
 .tpl-chip { white-space: nowrap; }
+
+/* ---- split bills */
+.bill-list { display: grid; gap: 14px; margin-bottom: 18px; }
+.bill-card { border-radius: 14px; background: var(--surface); box-shadow: var(--shadow-soft); overflow: hidden; border-left: 4px solid var(--brass); }
+.bill-card.done { border-left-color: var(--income); opacity: .88; }
+.bill-card.late { border-left-color: var(--expense); }
+.bill-head { display: grid; gap: 6px; padding: 14px 16px 10px; }
+.bill-title { display: flex; flex-wrap: wrap; align-items: center; gap: 4px 10px; }
+.bill-title b { font-size: 18px; }
+.bill-progress { display: flex; align-items: center; gap: 12px; }
+.bill-bar { flex: 1; max-width: 320px; height: 8px; border-radius: 4px; background: var(--line-2); overflow: hidden; }
+.bill-bar i { display: block; height: 100%; background: var(--income); border-radius: 4px; }
+.bill-acts { display: flex; gap: 6px; justify-content: flex-end; }
+.bill-shares { padding: 0 16px 6px; border-top: 1px solid var(--line-2); }
+.bill-shares .adv-row:last-child { border-bottom: 0; }
+.bill-box .bill-set { border: 1px solid var(--line-2); border-radius: 12px; padding: 10px 14px 14px; margin: 0; display: grid; gap: 10px; }
+.bill-box legend { padding: 0 6px; font-weight: 600; color: var(--ink-2); }
+.bill-tools { display: flex; flex-wrap: wrap; gap: 8px 12px; align-items: center; }
+.bill-tools > input.amt { width: 9em; }
+.bill-due-all { display: inline-flex; flex-wrap: wrap; align-items: center; gap: 6px; }
+.bill-people { display: grid; gap: 8px; }
+.bill-person { display: grid; grid-template-columns: minmax(6em, 1.4fr) minmax(5.5em, 1fr) minmax(9em, 1.1fr) auto; gap: 8px; align-items: center; }
+.bill-person input { width: 100%; }
+.bill-person input[type=date] { -webkit-appearance: none; appearance: none; text-align: left; min-height: 38px; }
+.bill-friends { display: flex; flex-wrap: wrap; gap: 6px 8px; align-items: center; }
+.chip-pick { border: 1px solid var(--line); background: var(--surface); border-radius: 999px; padding: 4px 14px; cursor: pointer; }
+.chip-pick.on { background: var(--primary); color: var(--on-primary); border-color: var(--primary); }
+.bill-sum { margin: 0; display: flex; flex-wrap: wrap; align-items: baseline; }
+.adv-auto { display: grid; gap: 6px; }
+.adv-auto-acct { display: inline-flex; align-items: center; gap: 4px; }
+@media (max-width: 640px) {
+  .bill-person { grid-template-columns: minmax(0, 1fr) minmax(0, 1fr) auto; grid-template-areas: "name name x" "amt due due"; row-gap: 6px; padding-bottom: 10px; border-bottom: 1px dashed var(--line-2); }
+  .bill-person .bp-name { grid-area: name; } .bill-person .bp-amt { grid-area: amt; } .bill-person .bp-due { grid-area: due; } .bill-person .btn { grid-area: x; }
+  .bill-person input[type=date] { min-height: 44px; }
+  .bill-tools > input.amt { width: 100%; flex: 1 1 100%; }
+  .bill-due-all { flex: 1 1 100%; }
+  .bill-due-all input[type=date] { flex: 1 1 8em; -webkit-appearance: none; appearance: none; text-align: left; min-height: 44px; }
+  .chip-pick { min-height: 40px; padding: 4px 16px; }
+}
+.page-actions { display: flex; align-items: center; gap: 8px; }
+.ccy-tag { margin-left: .35em; }
+.bill-quick { display: inline-flex; gap: 4px; flex-wrap: nowrap; white-space: nowrap; }
+.bill-total { flex: 1 1 100%; } .bill-total input { width: 100%; max-width: 14em; }

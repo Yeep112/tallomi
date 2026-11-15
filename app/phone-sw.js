@@ -1,6 +1,6 @@
 // Tallomi phone version: keeps every file of this version so it opens and works with no network.
 // A new version is downloaded in the background and starts only when the person taps "立即更新" (or the app is closed and reopened).
-const VERSION = '1.40.0';
+const VERSION = '1.41.1';
 const CACHE = 'pennyworth-phone-' + VERSION;
 
 self.addEventListener('install', (e) => {

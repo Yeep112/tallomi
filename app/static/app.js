@@ -319,6 +319,7 @@ async function renderRoute() {
   if (!same) {                                         // another page
     if (prev && prev !== route && view.childNodes.length && !S.charts.length && !view.querySelector('canvas, :scope > .empty')) routeSnaps[prev] = { nodes: [...view.childNodes], at: Date.now(), y: window.scrollY };
     S.charts.forEach((c) => c.destroy()); S.charts = [];
+    for (const k of Object.keys(routeSnaps)) if (Date.now() - routeSnaps[k].at >= SNAP_MAX_AGE) delete routeSnaps[k];     // old pages are not kept around
     const snap = routeSnaps[route]; delete routeSnaps[route];
     if (snap && Date.now() - snap.at < SNAP_MAX_AGE) { view.replaceChildren(...snap.nodes); window.scrollTo(0, snap.y); same = true; }
     else {                                             // never seen (or too old): start from an empty page, with a thin progress line while it loads
@@ -345,6 +346,28 @@ async function renderRoute() {
   window.scrollTo(0, y);
 }
 window.addEventListener('hashchange', renderRoute);
+// Moving between pages does not pile up "previous pages": the overview stays as the one page Back returns to, and going from one page to
+// another replaces the current history entry instead of adding one. (Ctrl/⌘-click, middle click and links that open elsewhere behave as usual.)
+let homeBelow = false;                                   // the overview is the entry just below this one
+function goRoute(hash) {
+  const to = hash.replace('#/', ''), from = currentRoute();
+  if (to === from && location.hash === hash) return;
+  if (from === 'overview') { homeBelow = true; location.hash = hash; return; }
+  if (to === 'overview' && homeBelow) {
+    homeBelow = false; history.back();
+    setTimeout(() => { if (currentRoute() !== 'overview') location.replace('#/overview'); }, 250);
+    return;
+  }
+  location.replace(hash);
+}
+document.addEventListener('click', (e) => {
+  if (e.defaultPrevented || e.button !== 0 || e.metaKey || e.ctrlKey || e.shiftKey || e.altKey) return;
+  const a = e.target.closest && e.target.closest('a[href^="#/"]');
+  if (!a || (a.target && a.target !== '_self') || a.hasAttribute('download')) return;
+  const hash = a.getAttribute('href');
+  if (!ROUTES[hash.slice(2).split('?')[0]]) return;      // not a page of ours: leave it alone
+  e.preventDefault(); goRoute(hash);
+});
 
 // ----------------------------------------------------- transaction form pieces
 // Shared by the quick-entry bar and the edit dialog.
@@ -461,7 +484,8 @@ function payload(m) {
     amount: m.amount, to_amount: m.type === 'transfer' ? m.to_amount : undefined, category: m.type === 'transfer' ? '' : m.category, note: m.note,
     tags: m.type === 'adjust' ? undefined : (m.tags || ''),
     advance: m.type === 'expense' ? (m.advance || '') : '', counterparty: m.type === 'expense' && m.advance ? (m.counterparty || '') : '', due: m.type === 'expense' && m.advance ? (m.due || '') : '',
-    no_budget: m.type === 'expense' ? !!m.no_budget : false, no_stats: m.type === 'expense' ? !!m.no_stats : false };
+    no_budget: m.type === 'expense' ? !!m.no_budget : false, no_stats: m.type === 'expense' ? !!m.no_stats : false,
+    auto_settle: m.type === 'expense' && m.advance && m.due && m.auto_settle ? m.auto_settle : (m.type === 'expense' && m.advance ? '' : undefined) };
 }
 
 function entryBar() {
@@ -497,13 +521,13 @@ async function recordEntry(m) {
   else if (m.repeat) toast('離線時沒辦法設定定期交易；電腦連上後再到「設定 → 定期交易」新增', true);
   if (!made.queued) toast(`已記下${m.advance ? ADV_LABEL[m.advance] + '的' : ''}${TYPE_LABEL[m.type]}　${num(Number(String(m.amount).replace(/,/g, '')), a ? a.currency : 'TWD')} ${a ? a.currency : ''}　${a ? a.name : ''}${tplMsg}${repMsg}`);
   if (lost) toast(`有 ${lost} 張照片沒存成功，交易本身已記下；可以到編輯再加一次`, true);
-  Object.assign(m, { amount: '', to_amount: '', note: '', category: '', tags: pinnedTags(), time: '', advance: '', counterparty: '', due: '', no_budget: false, no_stats: false, save_tpl: false, tpl_ask: false, repeat: false });
+  Object.assign(m, { amount: '', to_amount: '', note: '', category: '', tags: pinnedTags(), time: '', advance: '', counterparty: '', due: '', auto_settle: '', no_budget: false, no_stats: false, save_tpl: false, tpl_ask: false, repeat: false });
   watchSync();
   return made;
 }
 
 function openTxDialog(tx) {
-  const m = { type: tx.type, account_id: tx.account_id, to_account_id: tx.to_account_id, amount: String(tx.amount), to_amount: tx.to_amount == null ? '' : String(tx.to_amount), category: tx.category, note: tx.note, tags: (tx.tags || []).join(' '), advance: tx.advance || '', counterparty: tx.counterparty || '', due: tx.due || '', no_budget: !!tx.no_budget, no_stats: !!tx.no_stats, settle_of: tx.settle_of || null, receipts: [...(tx.receipts || [])], photos: [], dropped: [], time: tx.time };
+  const m = { type: tx.type, account_id: tx.account_id, to_account_id: tx.to_account_id, amount: String(tx.amount), to_amount: tx.to_amount == null ? '' : String(tx.to_amount), category: tx.category, note: tx.note, tags: (tx.tags || []).join(' '), advance: tx.advance || '', counterparty: tx.counterparty || '', due: tx.due || '', auto_settle: tx.auto_account_id || '', no_budget: !!tx.no_budget, no_stats: !!tx.no_stats, settle_of: tx.settle_of || null, receipts: [...(tx.receipts || [])], photos: [], dropped: [], time: tx.time };
   const holder = h('div', { class: 'rows', style: 'padding:0;max-width:none' });
   const draw = () => { holder.replaceChildren(...[h('div', { class: 'grid2' }, txFields(m, draw, { editing: true }).map((f) => (f.classList && f.classList.contains('ccy-tag')) ? null : f))].filter(Boolean)); };
   draw();
