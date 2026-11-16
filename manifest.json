@@ -1,13 +1,13 @@
 {
  "app": "pennyworth",
- "version": "1.41.1",
- "released": "2026-11-15",
- "zip": "Pennyworth-1.41.1.zip",
- "download": "Tallomi-1.41.1.zip",
- "sha256": "f5454540b5865c74f696f226e837ed1a23cabffcdb36fc707820a8a1a78db237",
- "size": 928438,
+ "version": "1.42.0",
+ "released": "2026-11-16",
+ "zip": "Pennyworth-1.42.0.zip",
+ "download": "Tallomi-1.42.0.zip",
+ "sha256": "733345ee9b5ae4ec0901c556ec7058dd309179a25bae71b84e090d485ddc8a13",
+ "size": 931125,
  "notes": [
-  "分帳：手機版面、常一起的朋友"
+  "分帳與代墊頁改善"
  ],
  "min_version": "0",
  "manual": false,

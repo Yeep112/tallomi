@@ -19,7 +19,7 @@ function advanceField(m, redraw) {
   const pick = h('select', { 'aria-label': '這筆是不是代墊', onchange: (e) => {
     if (e.target.value === 'split') {                                       // several friends, each pays back on their own: the bill box
       e.target.value = m.advance || '';
-      openBillDialog({ account_id: m.account_id, time: m.time, category: m.category, note: m.note });
+      openBillDialog({ account_id: m.account_id, time: m.time, category: m.category, note: m.note, host: e.target.closest('dialog') });
       return;
     }
     m.advance = e.target.value;
@@ -132,19 +132,46 @@ async function viewAdvances(view) {
       : h('div', { class: 'empty' }, h('b', null, '目前沒有待收的款項'), '記一筆支出時選「幫朋友付」或「先付款，之後報帳」，就會列在這裡。')));
   }
   const seg = (list, cur, set, label) => h('div', { class: 'seg', role: 'group', 'aria-label': label }, list.map(([k, l]) => h('button', { type: 'button', 'aria-pressed': String(cur === k), onclick: () => { set(k); renderRoute(); } }, l)));
+  S.advSel = S.advSel || new Set();
+  const selBar = h('div', { class: 'adv-selbar', role: 'region', 'aria-label': '已勾選的項目', hidden: true });
+  const everyId = () => [...bills.flatMap((b) => b.shares.map((x) => x.id)), ...items.map((x) => x.id)];
+  const paintBar = () => {
+    const n = S.advSel.size, all = everyId();
+    selBar.hidden = !n;
+    selBar.replaceChildren(h('b', null, `已勾選 ${n} 筆`),
+      h('button', { class: 'btn sm ghost', type: 'button', onclick: () => { all.forEach((id) => S.advSel.add(id)); syncRows(); } }, `全選（${all.length}）`),
+      h('button', { class: 'btn sm ghost', type: 'button', onclick: () => { S.advSel.clear(); syncRows(); } }, '取消勾選'),
+      h('button', { class: 'btn sm danger solid', type: 'button', onclick: deleteSelected }, `刪除 ${n} 筆`));
+  };
+  const syncRows = () => {
+    view.querySelectorAll('.adv-row[data-id]').forEach((el) => { const on = S.advSel.has(+el.dataset.id); el.classList.toggle('picked', on); const cb = el.querySelector('.adv-pick input'); if (cb) cb.checked = on; });
+    view.querySelectorAll('.bill-pickall input').forEach((cb) => { const ids = cb.dataset.ids.split(',').map(Number); cb.checked = ids.every((id) => S.advSel.has(id)); });
+    paintBar();
+  };
+  const pickIds = (ids, on) => { ids.forEach((id) => (on ? S.advSel.add(id) : S.advSel.delete(id))); syncRows(); };
+  const deleteSelected = async () => {
+    const ids = [...S.advSel];
+    const ok = await confirmBox({ title: `刪除勾選的 ${ids.length} 筆？`, confirmLabel: '刪除', danger: true,
+      message: h('p', null, '這些代墊連同它們已記下的收款會一起刪除，帳戶餘額會跟著還原。刪除後 1 分鐘內可以復原。') });
+    if (!ok) return;
+    try { const r = await api('POST', '/api/advances/delete', { ids }); S.advSel.clear(); await afterChange(`已刪除 ${r.deleted} 筆`, undoAction(r.undo)); } catch (e) { fail(e); }
+  };
   const row = (it) => {
-    const box = h('div', { class: 'adv-row' + (it.due_in != null && it.due_in < 0 ? ' late' : '') },
-      h('div', { class: 'adv-main' },
-        h('div', null, h('b', null, it.counterparty), h('span', { class: `adv-badge ${it.state}` }, `${ADV_LABEL[it.advance]}·${ADV_STATE[it.state]}`), dueMark(it)),
+    const open = it.state === 'open' || it.state === 'partial';
+    const edit = () => openTxDialog(it);
+    const box = h('div', { class: 'adv-row' + (it.due_in != null && it.due_in < 0 ? ' late' : '') + (S.advSel.has(it.id) ? ' picked' : ''), 'data-id': String(it.id) },
+      h('label', { class: 'adv-pick', title: '勾選' }, h('input', { type: 'checkbox', checked: S.advSel.has(it.id), 'aria-label': `勾選 ${it.counterparty} ${num(it.amount, it.currency)}`,
+        onchange: (e) => { if (e.target.checked) S.advSel.add(it.id); else S.advSel.delete(it.id); syncRows(); } })),
+      h('div', { class: 'adv-main', role: 'button', tabindex: '0', title: '點一下編輯這筆', onclick: edit, onkeydown: (e) => { if (e.key === 'Enter' || e.key === ' ') { e.preventDefault(); edit(); } } },
+        h('div', null, h('b', null, it.counterparty), h('span', { class: `adv-badge ${it.state}` }, `${ADV_LABEL[it.advance]}·${ADV_STATE[it.state]}`), dueMark(it), receiptMark(it)),
         h('div', { class: 'hint' }, `${shortTime(it.time)}　${it.category}${it.note ? '　' + it.note : ''}　${it.account}`)),
-      h('div', { class: 'adv-nums num' },
+      h('div', { class: 'adv-nums num', onclick: edit }, 
         h('div', null, `${num(it.amount, it.currency)} ${it.currency}`),
-        h('div', { class: 'hint' }, it.repaid ? `已收 ${num(it.repaid, it.currency)}` : '', it.state === 'open' || it.state === 'partial' ? `　剩 ${num(it.remaining, it.currency)}` : '')),
+        h('div', { class: 'hint' }, it.repaid ? `已收 ${num(it.repaid, it.currency)}` : '', open ? `　剩 ${num(it.remaining, it.currency)}` : '')),
       h('div', { class: 'adv-acts' },
-        it.state === 'open' || it.state === 'partial' ? h('button', { class: 'btn sm primary', type: 'button', onclick: () => openSettle(it) }, '收款') : null,
-        it.state === 'open' || it.state === 'partial' ? h('button', { class: 'btn sm ghost', type: 'button', onclick: () => writeOff(it) }, '不收了') : null,
-        it.state === 'off' ? h('button', { class: 'btn sm ghost', type: 'button', onclick: async () => { try { await api('POST', `/api/advances/${it.id}/reopen`); await afterChange('已重新開啟'); } catch (e) { fail(e); } } }, '重新開啟') : null,
-        h('button', { class: 'btn sm ghost', type: 'button', onclick: () => openTxDialog(it) }, '編輯')));
+        open ? h('button', { class: 'btn sm primary', type: 'button', onclick: () => openSettle(it) }, '收款') : null,
+        open ? h('button', { class: 'btn sm ghost', type: 'button', onclick: () => writeOff(it) }, '不收了') : null,
+        it.state === 'off' ? h('button', { class: 'btn sm ghost', type: 'button', onclick: async () => { try { await api('POST', `/api/advances/${it.id}/reopen`); await afterChange('已重新開啟'); } catch (e) { fail(e); } } }, '重新開啟') : null));
     const delPay = async (p) => {
       const ok = await confirmBox({ title: '刪除這筆收款？', confirmLabel: '刪除', danger: true, message: h('p', null, '帳戶餘額會跟著減少，這筆代墊會回到還沒收的狀態。') });
       if (!ok) return;
@@ -152,16 +179,20 @@ async function viewAdvances(view) {
     };
     if (it.payments.length) {
       box.append(h('ul', { class: 'adv-pays' }, it.payments.map((p) => h('li', null,
-        h('span', null, `${shortTime(p.time)}　收到 ${num(p.amount, p.currency)} ${p.currency}　${p.account}`),
+        h('span', { class: 'pay-line', role: 'button', tabindex: '0', title: '點一下編輯這筆收款', onclick: () => openTxDialog(p), onkeydown: (e) => { if (e.key === 'Enter') openTxDialog(p); } },
+          `${shortTime(p.time)}　收到 ${num(p.amount, p.currency)} ${p.currency}　${p.settle_from ? p.settle_from + ' → ' : ''}${p.account}`),
         h('button', { class: 'btn sm ghost', type: 'button', onclick: () => delPay(p) }, '刪除')))));
     }
     return box;
   };
+  const ids = new Set(everyId()); S.advSel.forEach((id) => { if (!ids.has(id)) S.advSel.delete(id); });
   view.append(h('section', { class: 'section' },
     h('div', { class: 'section-head' }, h('h2', null, tab === 'open' ? '待收的款項' : '已結清'),
       h('span', { class: 'head-btns' }, seg([['open', '待收'], ['done', '已結清']], tab, (k) => { S.advTab = k; }, '狀態'), seg([['', '全部'], ['friend', '朋友'], ['claim', '報帳']], kindF, (k) => { S.advKind = k; }, '種類'))),
-    bills.length ? h('div', { class: 'bill-list' }, bills.map((b) => billCard(b, row))) : null,
+    selBar,
+    bills.length ? h('div', { class: 'bill-list' }, bills.map((b) => billCard(b, row, pickIds))) : null,
     items.length ? h('div', { class: 'adv-list' }, items.map(row)) : (bills.length ? null : h('div', { class: 'empty' }, h('b', null, tab === 'open' ? '沒有待收的項目' : '還沒有結清的項目')))));
+  paintBar();
 }
 
 // ---- quick templates: a favourite entry that fills the form with one tap

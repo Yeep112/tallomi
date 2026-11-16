@@ -940,3 +940,18 @@ html.phone #sync-line { display: none; }
 .ccy-tag { margin-left: .35em; }
 .bill-quick { display: inline-flex; gap: 4px; flex-wrap: nowrap; white-space: nowrap; }
 .bill-total { flex: 1 1 100%; } .bill-total input { width: 100%; max-width: 14em; }
+
+/* ---- advances: tick boxes, click to edit */
+.adv-row { grid-template-columns: auto minmax(0, 1fr) auto auto; }
+.adv-row.picked { background: color-mix(in srgb, var(--brass) 10%, transparent); }
+.adv-pick { display: grid; place-items: center; min-width: 32px; min-height: 32px; cursor: pointer; }
+.adv-pick input { width: 20px; height: 20px; }
+.adv-main, .adv-nums { cursor: pointer; }
+.adv-main:hover b { text-decoration: underline; text-underline-offset: 3px; }
+.adv-main:focus-visible, .pay-line:focus-visible { outline: 2px solid var(--brass); outline-offset: 2px; border-radius: 4px; }
+.pay-line { cursor: pointer; flex: 1; }
+.pay-line:hover { text-decoration: underline; }
+.adv-selbar { position: sticky; top: 0; z-index: 5; display: flex; flex-wrap: wrap; align-items: center; gap: 8px 10px; padding: 10px 14px; margin: 0 0 12px; background: var(--surface); border-radius: 12px; box-shadow: var(--shadow); }
+.adv-selbar[hidden] { display: none; }
+.bill-pickall { display: inline-flex; align-items: center; gap: 4px; font-size: 14px; cursor: pointer; }
+@media (max-width: 720px) { .adv-row { grid-template-columns: auto minmax(0, 1fr) auto; } .adv-acts { grid-column: 2 / -1; } .adv-pays { grid-column: 2 / -1; } }

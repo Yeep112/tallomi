@@ -142,6 +142,12 @@ function openDialog({ title, body, primary, wide, extraFoot, cancelLabel = '取�
   });
   dlg.appendChild(form);
   dlg.addEventListener('close', () => { dlg.remove(); unlockScroll(); });
+  // A tap or click on the dimmed area outside the box is the same as pressing the cancel button. It must start AND end outside, so selecting
+  // text inside a field and letting go over the backdrop does not close it, and nothing happens while the form is being saved.
+  const outside = (e) => { const r = dlg.getBoundingClientRect(); return e.clientX < r.left || e.clientX > r.right || e.clientY < r.top || e.clientY > r.bottom; };
+  let downOutside = false;
+  dlg.addEventListener('pointerdown', (e) => { downOutside = e.target === dlg && outside(e); });
+  dlg.addEventListener('click', (e) => { if (e.target === dlg && downOutside && outside(e) && !submit.disabled) dlg.close(); downOutside = false; });
   document.body.appendChild(dlg);
   lockScroll();
   dlg.showModal();
@@ -639,12 +645,12 @@ function txTable(items, withBalance = true, viewer = null, sel = null, days = nu
     h('tr', { class: sel && S.sel.has(t.id) ? 'picked' : '', ...(days ? { 'data-of': t.time.slice(0, 10), hidden: days.folded.has(t.time.slice(0, 10)) } : {}) },
       sel ? h('td', { class: 'c-sel' }, h('input', { type: 'checkbox', checked: S.sel.has(t.id), 'aria-label': `選取 ${shortTime(t.time)} ${t.note || t.category || ''}`, onchange: (e) => { if (e.target.checked) S.sel.add(t.id); else S.sel.delete(t.id); e.target.closest('tr').classList.toggle('picked', e.target.checked); sel.changed(); } })) : null,
       h('td', { class: 'when' }, shortTime(t.time)),
-      h('td', { class: 'c-kind' }, h('span', { class: `kind ${t.type}` }, TYPE_LABEL[t.type])),
+      h('td', { class: 'c-kind' }, t.settle_of ? h('span', { class: 'kind transfer', title: '朋友或公司還你的錢：不是收入，也不算進收支統計' }, '代墊收回') : h('span', { class: `kind ${t.type}` }, TYPE_LABEL[t.type])),
       h('td', { class: 'c-cat' }, t.type === 'transfer' || t.type === 'adjust' ? typeChip(t.type)
         : h('button', { class: 'chip-btn', type: 'button', title: `更換「${t.category || '未分類'}」的圖示`, 'aria-label': `更換「${t.category || '未分類'}」的圖示`, onclick: () => editCategoryIcon(t.category || '未分類') }, catChip(t.category || '未分類')),
         h('span', { class: 'cat-name' }, t.category || '')),
       h('td', { class: 'note', title: t.note }, t.note, advBadge(t), receiptMark(t), tagChips(t)),
-      h('td', { class: 'c-acct' }, t.type === 'transfer' ? `${t.account} → ${t.to_account}` : t.account),
+      h('td', { class: 'c-acct' }, t.type === 'transfer' ? `${t.account} → ${t.to_account}` : t.settle_of && t.settle_from ? `${t.settle_from} → ${t.account}` : t.account),
       h('td', { class: 'r c-amt' }, amountCell(t, viewer)),
       withBalance ? balanceCell(t, viewer) : null,
       h('td', { class: 'act' }, h('button', { class: 'btn sm ghost', onclick: () => openTxDialog(t) }, '編輯')))].filter(Boolean))));

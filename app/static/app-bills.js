@@ -55,6 +55,11 @@ function openBillDialog(seed = {}) {
       ...(lastBill.length > 1 ? [h('button', { class: 'btn sm', type: 'button', title: lastBill.join('、'), onclick: () => { lastBill.forEach((n) => { if (!has(n)) toggleFriend(n); }); } }, `上次的 ${lastBill.length} 位`)] : []),
       ...friends.map((n) => h('button', { class: 'chip-pick' + (has(n) ? ' on' : ''), type: 'button', 'aria-pressed': String(has(n)), onclick: () => toggleFriend(n) }, n)));
   };
+  // The friends' category starts the same as mine (empty = same as mine) and can be changed on its own.
+  const fm = { type: 'expense', category: '' };
+  const fCat = catField(fm);
+  const fInput = fCat.querySelector('input[name=category]');
+  const syncCat = () => { if (fInput) fInput.placeholder = b.category ? `同我的：${b.category}` : '未分類'; };
   const equalSplit = () => {
     const total = toAmount(b.total);
     if (!(total > 0)) { toast('先在「帳單總額」填總金額', true); return; }
@@ -84,14 +89,19 @@ function openBillDialog(seed = {}) {
         h('button', { class: 'btn sm', type: 'button', onclick: equalSplit }, '平均分'),
         h('span', { class: 'bill-due-all' }, h('span', { class: 'hint' }, '全部預計還錢日'), dueAll,
           h('span', { class: 'bill-quick' }, [[7, '一週'], [14, '兩週'], [30, '一個月']].map(([n, l]) => h('button', { class: 'btn sm ghost', type: 'button', onclick: () => { dueAll.value = ymdPlusDays(n); dueAll.dispatchEvent(new Event('change')); } }, l))))),
+      h('div', { class: 'bill-friendcat' }, fCat),
       chips, list,
       h('div', null, h('button', { class: 'btn sm ghost', type: 'button', onclick: () => { b.shares.push({ name: '', amount: '', due: b.due }); paintPeople(); const ins = list.querySelectorAll('.bp-name'); if (!onTouch()) ins[ins.length - 1].focus(); } }, '＋ 再加一位'))),
     summary,
     photoField(b),
     h('p', { class: 'hint', style: 'margin:0' }, '朋友只要填名字、金額和預計還錢日，不用知道他們吃了什麼。錢會一次從帳戶扣掉；每位朋友還錢時到「代墊」頁按「收款」，選轉進哪個帳戶，全部收齊這張帳單就結案。'));
   body.querySelectorAll('.ccy-tag').forEach((t) => ccyTags.push(t));
+  body.addEventListener('input', syncCat); body.addEventListener('click', () => setTimeout(syncCat, 0)); body.addEventListener('focusout', () => setTimeout(syncCat, 0)); syncCat();
   paintPeople(); paintChips(); updateSum();
-  return openDialog({ title: '分帳：我先付，大家各自還', wide: true, body,
+  let reopening = false;
+  const clearAll = () => { reopening = true; dlg.close(); openBillDialog({ account_id: b.account_id, host: seed.host }); };
+  const dlg = openDialog({ title: '分帳：我先付，大家各自還', wide: true, body,
+    extraFoot: h('button', { class: 'btn ghost', type: 'button', style: 'margin-right:auto', onclick: clearAll }, '清除重填'),
     primary: { label: '記下這張帳單', run: async () => {
       const shares = b.shares.filter((s) => s.name.trim() || String(s.amount).trim());
       if (!shares.length) throw new Error('請至少填一位朋友的名字和金額');
@@ -99,15 +109,19 @@ function openBillDialog(seed = {}) {
       if (bad >= 0) throw new Error(`${shares[bad].name.trim() || '有一位朋友'}：請填名字和大於 0 的金額`);
       const res = await api('POST', '/api/bills', { title: b.title, time: b.time || undefined, account_id: b.account_id,
         mine: { amount: String(b.mineAmount || '').replace(/,/g, ''), category: b.category, note: b.mineNote },
+        share_category: fm.category,
         shares: shares.map((s) => ({ name: s.name.trim(), amount: String(s.amount).replace(/,/g, ''), due: s.due || '' })) });
       const lost = await uploadPhotos(res.primary_id, b);
       S.advTab = 'open';
       await afterChange(lost ? `已記下，但有 ${lost} 張照片沒存成功` : `已記下這張帳單：向 ${shares.length} 位朋友收款`);
     } } });
+  // Opened from the record box: recording, cancelling or tapping outside all go straight back to the page the record box was opened from.
+  dlg.addEventListener('close', () => { if (!reopening && seed.host && seed.host.isConnected) seed.host.close(); });
+  return dlg;
 }
 
 // ---- the card on the 代墊 page. `row(item)` draws one friend's line (the same one the single advances use).
-function billCard(bill, row) {
+function billCard(bill, row, pickIds) {
   const c = bill.currency, doneAll = bill.state === 'done';
   const pct = bill.count ? Math.round(bill.paid_count / bill.count * 100) : 0;
   const late = !doneAll && bill.shares.some((s) => s.due_in != null && s.due_in < 0 && (s.state === 'open' || s.state === 'partial'));
@@ -132,6 +146,8 @@ function billCard(bill, row) {
       h('div', { class: 'bill-progress' }, h('span', { class: 'bill-bar', role: 'img', 'aria-label': `已收 ${pct}%` }, h('i', { style: `width:${pct}%` })),
         h('span', { class: 'num' }, doneAll ? '全部收齊' : `還剩 ${num(bill.remaining, c)} ${c}`)),
       h('div', { class: 'bill-acts' },
+        h('label', { class: 'bill-pickall', title: '勾選這張帳單的所有朋友' }, h('input', { type: 'checkbox', 'data-ids': bill.shares.map((x) => x.id).join(','), 'aria-label': `勾選「${bill.title}」的全部 ${bill.count} 位`,
+          checked: bill.shares.every((x) => S.advSel && S.advSel.has(x.id)), onchange: (e) => pickIds(bill.shares.map((x) => x.id), e.target.checked) }), h('span', null, '全選')),
         h('button', { class: 'btn sm ghost', type: 'button', onclick: rename }, '改名'),
         h('button', { class: 'btn sm ghost danger', type: 'button', onclick: remove }, '刪除整張'))),
     h('div', { class: 'bill-shares' }, bill.shares.map(row)));
