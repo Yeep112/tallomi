@@ -100,7 +100,9 @@ function toast(msg, err, action) {
     t.remove();
     try { await action.run(); } catch (e) { fail(e); }
   } }, action.label));
-  $('#toasts').appendChild(t);
+  const box = $('#toasts');
+  box.querySelectorAll('.toast').forEach((o) => { if (err || !o.classList.contains('err')) o.remove(); });     // one message at a time: a newer one replaces the older (a failure is not wiped by a success)
+  box.appendChild(t);
   setTimeout(() => t.remove(), err ? 7000 : action ? 10000 : 3500);
 }
 const fail = (e) => toast(e.message || String(e), true);
@@ -182,7 +184,7 @@ const S = {
   txf: { q: '', type: '', account_id: '', from: '', to: '', tag: '', limit: TX_PAGE, transfers: true, group: 'day', back: null, folded: new Set() },
   rp: { year: new Date().getFullYear(), month: new Date().getMonth() + 1, group: 'category', cmpKind: 'expense', cmpMode: 'auto', months: [], years: [], kind: 'pie', accounts: ['total'], shareKind: 'pie', shareBy: 'value' },
   charts: [],
-  selMode: false, sel: new Set(),                       // transactions page: multi-select
+  selMode: true, sel: new Set(),                       // transactions page: multi-select
   hideAll: lsGet('pw_hide') === '1',                 // Settings: hide every page
   hidePages: (() => { try { return JSON.parse(lsGet('pw_hide_pages') || '{}') || {}; } catch { return {}; } })(),   // the eye on each page
   route: 'overview',
@@ -423,9 +425,17 @@ function txFields(m, redraw, { editing = false } = {}) {
     h('input', { name: 'note', autocomplete: 'off', value: m.note, maxlength: 500, oninput: (e) => { m.note = e.target.value; } })));
   const adv = editing && m.settle_of ? null : advanceField(m, redraw);
   if (adv) out.push(adv);
-  if (m.type !== 'adjust') { out.push(tagField(m, editing ? null : redraw)); out.push(photoField(m)); }
-  out.push(h('label', { class: 'field' }, h('span', null, '時間'),
+  // Rarely changed fields (tags, receipt photos, time) sit under one fold so the form is short on a phone. It starts open when any of them
+  // already holds something (an edit, a tag, a photo, a chosen date), and stays as the person left it while the form redraws.
+  const more = [];
+  if (m.type !== 'adjust') { more.push(tagField(m, editing ? null : redraw)); more.push(photoField(m)); }
+  more.push(h('label', { class: 'field' }, h('span', null, '時間'),
     h('input', { type: 'datetime-local', step: editing ? '1' : '60', value: (m.time || nowLocal()).slice(0, editing ? 19 : 16), 'aria-label': '時間', oninput: (e) => { m.time = e.target.value; } })));
+  if (m.moreOpen == null) m.moreOpen = !!(editing || m.time || String(m.tags || '').trim() || (m.photos && m.photos.length) || (m.receipts && m.receipts.length));
+  const fold = h('details', { class: 'more-fields', ontoggle: () => { m.moreOpen = fold.open; } },
+    h('summary', null, m.type === 'adjust' ? '更多選項（時間）' : '更多選項（標籤、收據照片、時間）'), h('div', { class: 'more-body' }, more));
+  fold.open = !!m.moreOpen;
+  out.push(fold);
   return out;
 }
 // Category field: type it with the keyboard, or open the A-Z list of every category used before (the ▾ button, or just start
@@ -685,7 +695,7 @@ async function viewTransactions(view) {
   const tallyBox = h('div');
   const selBox = h('div');
   let timer, shown = [];
-  const paintBar = () => { selBox.replaceChildren(...(S.selMode ? [selectionBar(shown, (full) => { if (full) paintList(); else paintBar(); })] : [])); };
+  const paintBar = () => { selBox.replaceChildren(...(S.sel.size ? [selectionBar(shown, (full) => { if (full) paintList(); else paintBar(); })] : [])); };
   const paintList = (r) => {
     if (r) listBox._r = r;
     r = listBox._r; if (!r) return;
@@ -705,7 +715,7 @@ async function viewTransactions(view) {
     const live = new Set(shown.map((t) => t.id));
     S.sel.forEach((id) => { if (!live.has(id)) S.sel.delete(id); });       // a filter hid it: it is no longer selected
     const days = { base, folded: f.folded, map: Object.fromEntries((r.groups || []).map((g) => [g.key, g])) };
-    listBox.replaceChildren(txTable(r.items, true, f.account_id, S.selMode ? { changed: paintBar } : null, days),
+    listBox.replaceChildren(txTable(r.items, true, f.account_id, { changed: paintBar }, days),
       r.total > r.items.length ? h('div', { style: 'padding:14px 0;text-align:center' }, h('span', { class: 'muted' }, `顯示 ${r.items.length} / ${r.total} 筆　`), h('button', { class: 'btn sm', onclick: () => { f.limit += 100; load(); } }, '載入更多')) : h('div', { class: 'hint', style: 'padding:10px' }, `共 ${r.total} 筆`));
     paintBar();
   };
@@ -721,11 +731,6 @@ async function viewTransactions(view) {
       paintList(r);
     } catch (e) { tallyBox.replaceChildren(); selBox.replaceChildren(); listBox._r = null; listBox.replaceChildren(h('div', { class: 'empty' }, e.message)); }
   };
-  const selBtn = h('button', { class: 'btn ghost', type: 'button', 'aria-pressed': String(S.selMode), onclick: () => {
-    S.selMode = !S.selMode; if (!S.selMode) S.sel = new Set();
-    selBtn.setAttribute('aria-pressed', String(S.selMode)); selBtn.textContent = S.selMode ? '結束選取' : '選取多筆'; paintList();
-  } }, S.selMode ? '結束選取' : '選取多筆');
-  if (f.group !== 'day' && S.selMode) { S.selMode = false; S.sel = new Set(); }
   view.append(h('div', { class: 'period-bar' },
     periodSwitch(f.group, (k) => { f.group = k; f.back = null; f.limit = TX_PAGE; renderRoute(); }),
     f.group === 'day' ? h('span', { class: 'fold-btns' },
@@ -744,7 +749,6 @@ async function viewTransactions(view) {
       h('option', { value: '' }, '全部'), ...[...new Set([...(S.st.tag_list || []).map((x) => x.tag), ...(f.tag ? [f.tag] : [])])].map((t) => h('option', { value: t, selected: t === f.tag }, `#${t}`)))) : null,
     h('label', { class: 'field' }, h('span', null, '從'), h('input', { type: 'date', value: f.from, onchange: (e) => { f.from = e.target.value; load(); } })),
     h('label', { class: 'field' }, h('span', null, '到'), h('input', { type: 'date', value: f.to, onchange: (e) => { f.to = e.target.value; load(); } })),
-    f.group === 'day' ? selBtn : null,
     h('button', { class: 'btn ghost', onclick: () => { Object.assign(f, { q: '', type: '', account_id: '', from: '', to: '', tag: '', limit: TX_PAGE, back: null }); renderRoute(); } }, '清除篩選')));
   view.append(tallyBox, selBox, listBox);
   if (S.focusAdd) { S.focusAdd = false; setTimeout(() => { const a = $('input[name=amount]'); if (a) { a.scrollIntoView({ block: 'center' }); if (!onTouch()) a.focus(); } }, 60); }

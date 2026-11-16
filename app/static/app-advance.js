@@ -381,12 +381,12 @@ function templateBar(m, redraw) {
     h('span', { class: 'tpl-label' }, '範本'),
     h('span', { class: 'tpl-chips' }, list.map(chip), past.length ? h('span', { class: 'tpl-sep', title: '以前記過的交易，點一下就帶入', 'aria-label': '以前記過的' }, '記過') : null, past.map(chip),
       list.length || past.length ? null : h('span', { class: 'hint' }, '記過的交易會自動出現在這裡，點一下就帶入')),
-    h('span', { class: 'tpl-tools' },
+    h('details', { class: 'tpl-more', open: !!(m.save_tpl || m.repeat || m.tpl_ask) || !!m.tplOpen, ontoggle: (e) => { m.tplOpen = e.target.open; } }, h('summary', null, '存成範本、每月自動記'), h('span', { class: 'tpl-tools' },
     h('label', { class: 'tpl-save', title: '輸入好這筆交易後勾選，按「記下」時會一併存成快速範本' },
       h('input', { type: 'checkbox', checked: !!m.save_tpl, onchange: (e) => { m.save_tpl = e.target.checked; askBox.disabled = !m.save_tpl; } }), '記下後存成範本'),
     h('label', { class: 'tpl-save', title: '存成的範本以後點一下會先問金額，不會直接帶入這次的金額' }, askBox, '每次問金額'),
     h('label', { class: 'tpl-save', title: '記下這一筆後，之後每個月同一天自動再記一筆（房租、訂閱、保費…）。到「設定 → 定期交易」可以暫停或修改。' },
       h('input', { type: 'checkbox', checked: !!m.repeat, onchange: (e) => { m.repeat = e.target.checked; } }), '之後每月自動記'),
-    h('button', { class: 'btn sm ghost', type: 'button', onclick: () => openTemplateManager(m, redraw) }, '管理'),
-    clearButton(m, redraw)));
+    h('button', { class: 'btn sm ghost', type: 'button', onclick: () => openTemplateManager(m, redraw) }, '管理'))),
+    clearButton(m, redraw));
 }

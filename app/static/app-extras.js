@@ -136,7 +136,7 @@ function receiptMark(t) {
 }
 
 // ------------------------------------------------------------------ multi-select
-function resetSelection() { S.selMode = false; S.sel = new Set(); }      // S.selMode / S.sel start out in app.js
+function resetSelection() { S.sel = new Set(); }      // S.selMode / S.sel start out in app.js
 
 async function bulkDo(action, extra, doneText) {
   const ids = [...S.sel];
@@ -173,7 +173,7 @@ function bulkTag(remove) {
 }
 async function bulkDelete() {
   const n = S.sel.size;
-  const ok = await confirmBox({ title: `刪除 ${n} 筆交易？`, message: h('p', null, `帳戶餘額會立刻重新計算。刪除後約一分鐘內可以按「復原」救回來。`), confirmLabel: `刪除 ${n} 筆`, danger: true });
+  const ok = await confirmBox({ title: `刪除 ${n} 筆交易？`, message: h('p', null, `帳戶餘額會立刻重新計算。如果其中有代墊，已記下的收款（朋友還的錢）會一起刪除。刪除後約一分鐘內可以按「復原」救回來。`), confirmLabel: `刪除 ${n} 筆`, danger: true });
   if (!ok) return;
   try { await bulkDo('delete', {}, (c) => `已刪除 ${c} 筆`); } catch (e) { fail(e); }
 }
@@ -184,11 +184,11 @@ function selectionBar(items, repaint) {
   const allOn = items.length > 0 && items.every((t) => S.sel.has(t.id));
   const act = (label, fn, cls = '') => h('button', { class: 'btn sm ' + cls, type: 'button', disabled: !n, onclick: fn }, label);
   return h('div', { class: 'sel-bar', role: 'toolbar', 'aria-label': '多筆操作' },
-    h('b', { class: 'sel-n' }, n ? `已選 ${n} 筆` : '勾選要處理的交易'),
+    h('b', { class: 'sel-n' }, `已勾選 ${n} 筆`),
     h('button', { class: 'btn sm ghost', type: 'button', onclick: () => { if (allOn) items.forEach((t) => S.sel.delete(t.id)); else items.forEach((t) => S.sel.add(t.id)); repaint(true); } }, allOn ? '取消全選' : `全選目前列出的 ${items.length} 筆`),
     act('改類別', bulkCategory), act('加標籤', () => bulkTag(false)), act('移除標籤', () => bulkTag(true)),
     act('刪除', () => bulkDelete(), 'danger'),
-    h('button', { class: 'btn sm ghost sel-end', type: 'button', onclick: () => { resetSelection(); renderRoute(); } }, '結束選取'));
+    h('button', { class: 'btn sm ghost sel-end', type: 'button', onclick: () => { resetSelection(); repaint(true); } }, '取消勾選'));
 }
 
 // Settings: how much the receipt photos take up (they are inside every backup too).
