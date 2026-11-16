@@ -100,6 +100,6 @@ async function viewCalendar(view) {
       h('div', { class: 'section-head' },
         h('h2', null, `${c.sel.slice(5).replace('-', '/')}　${wd}`, g ? h('span', { class: 'cal-day-net' }, `　淨額 `, h('b', { class: 'num ' + (g.net >= 0 ? 'pos' : 'neg') }, num(g.net, base, true))) : null),
         h('button', { class: 'btn primary', type: 'button', onclick: () => openQuickAdd({ date: c.sel }) }, `＋ 在 ${c.sel.slice(5).replace('-', '/')} 記一筆`)),
-      list.length ? txTable(list, false) : h('div', { class: 'empty' }, h('b', null, '這一天還沒有交易'), '按右上角的按鈕，直接記在這一天。')));
+      list.length ? pickableList(list) : h('div', { class: 'empty' }, h('b', null, '這一天還沒有交易'), '按右上角的按鈕，直接記在這一天。')));
   }
 }

@@ -972,3 +972,9 @@ html.phone #sync-line { display: none; }
 .tpl-more[open] > summary::before { content: '▾'; }
 .tpl-more .tpl-tools { display: flex; margin: 4px 0 6px; padding-top: 0; }
 @media (max-width: 720px) { .tpl-more { margin-left: 0; } .tpl-more[open] { flex: 1 0 100%; } .tpl-more[open] .tpl-tools { gap: 8px 14px; } .tpl-bar { gap: 0 8px; } }
+
+/* ---- a transaction row opens its editor when tapped */
+.ledger.tx tbody tr.tx-row { cursor: pointer; }
+.ledger.tx tbody tr.tx-row:hover { background: color-mix(in srgb, var(--brass) 7%, transparent); }
+.ledger.tx tbody tr.tx-row:active { background: color-mix(in srgb, var(--brass) 14%, transparent); }
+.ledger.tx tbody tr.tx-row:focus-visible { outline: 2px solid var(--brass); outline-offset: -2px; }
