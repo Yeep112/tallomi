@@ -621,7 +621,7 @@ async function viewOverview(view) {
   const recent = await api('GET', '/api/transactions?limit=8');
   view.append(h('section', { class: 'section' },
     h('div', { class: 'section-head' }, h('h2', null, '最近的紀錄'), h('a', { class: 'btn sm ghost', href: '#/transactions' }, '全部交易')),
-    txTable(recent.items, false)));
+    recent.items.length ? pickableList(recent.items) : txTable(recent.items, false)));
 }
 
 // -------------------------------------------------------------- transactions
@@ -647,8 +647,9 @@ function balanceCell(t, viewer) {
 }
 // A tap or click anywhere on a transaction row opens its editor. Things inside the row that do their own job (tick box, category icon,
 // tags, receipt marks, the 編輯 button) keep doing it, and so does selecting text with the mouse.
-const ROW_OWN = 'button, a, input, select, textarea, label, summary, [role=button], .chip-btn, .tag-chip, .receipt-mark';
-function rowOpen(t) {
+const ROW_OWN = 'button, a, input, select, textarea, label, summary, [role=button], .chip-btn, .tag-chip, .receipt-mark, .inv-pricebox';
+function rowOpen(t) { return rowTap(() => openTxDialog(t)); }
+function rowTap(open) {
   let down = null;
   return {
     onpointerdown: (e) => { down = [e.clientX, e.clientY]; },
@@ -657,9 +658,9 @@ function rowOpen(t) {
       if (down && Math.hypot(e.clientX - down[0], e.clientY - down[1]) > 6) return;       // a drag is not a tap
       const sel = window.getSelection && window.getSelection();
       if (sel && String(sel).length && e.pointerType !== 'touch') return;
-      openTxDialog(t);
+      open();
     },
-    onkeydown: (e) => { if ((e.key === 'Enter' || e.key === ' ') && e.target === e.currentTarget) { e.preventDefault(); openTxDialog(t); } },
+    onkeydown: (e) => { if ((e.key === 'Enter' || e.key === ' ') && e.target === e.currentTarget) { e.preventDefault(); open(); } },
   };
 }
 function txTable(items, withBalance = true, viewer = null, sel = null, days = null) {
@@ -916,7 +917,7 @@ async function viewAccounts(view) {
   const active = S.st.accounts.filter((a) => !a.archived), archived = S.st.accounts.filter((a) => a.archived);
   const table = (rows) => h('table', { class: 'ledger' },
     h('thead', null, h('tr', null, h('th', null, '帳戶'), h('th', { class: 'r' }, '期初餘額'), h('th', { class: 'r' }, '目前餘額'), h('th', { class: 'r' }, `約合 ${base}`), h('th', { class: 'r' }, '交易數'), h('th', null, ''))),
-    h('tbody', null, rows.map((a) => h('tr', { class: a.archived ? 'archived' : '' },
+    h('tbody', null, rows.map((a) => h('tr', { class: (a.archived ? 'archived ' : '') + 'tx-row', tabindex: '0', title: '點一下編輯這個帳戶', ...rowTap(() => openAccountDialog(a)) },
       h('td', { class: 'name' }, accChip(a, 'sm'), a.name, h('span', { class: 'badge' }, a.currency)),
       h('td', { class: 'r muted' }, num(a.opening, a.currency)),
       h('td', { class: 'r' }, money(a.balance, a.currency, { tone: true, tag: false })),
@@ -1323,7 +1324,7 @@ function stackTable(t) {
   if (t.classList.contains('stack')) return;
   t.classList.add('stack');
   const labels = [...t.querySelectorAll('thead th')].map((th) => th.textContent.trim());
-  t.querySelectorAll('tbody > tr').forEach((tr) => {
+  t.querySelectorAll(':scope > tbody > tr').forEach((tr) => {          // only this table's own rows: a table nested inside a row has its own labels
     const cells = [...tr.children];
     if (cells.some((td) => td.colSpan > 1)) return;
     cells.forEach((td, i) => { if (labels[i]) td.dataset.label = labels[i]; });

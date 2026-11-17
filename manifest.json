@@ -1,13 +1,13 @@
 {
  "app": "pennyworth",
- "version": "1.45.0",
- "released": "2026-11-16",
- "zip": "Pennyworth-1.45.0.zip",
- "download": "Tallomi-1.45.0.zip",
- "sha256": "f56956e891f5fdfe33c9fe68eba4bc74228dde328f70c37fa748a7b24977ffa8",
- "size": 933032,
+ "version": "1.46.1",
+ "released": "2026-11-17",
+ "zip": "Pennyworth-1.46.1.zip",
+ "download": "Tallomi-1.46.1.zip",
+ "sha256": "20509873e00e5a2047211915c2cc1e62a6ef89631ba2f18ef6c184b02bb26782",
+ "size": 936036,
  "notes": [
-  "月曆與總覽也能勾選"
+  "手機投資頁版面修正"
  ],
  "min_version": "0",
  "manual": false,

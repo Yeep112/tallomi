@@ -178,6 +178,17 @@ async function bulkDelete() {
   try { await bulkDo('delete', {}, (c) => `已刪除 ${c} 筆`); } catch (e) { fail(e); }
 }
 
+// A short transaction list (the calendar's day, the overview's recent entries) with tick boxes and the same "已勾選 N 筆" bar as the 交易 page.
+function pickableList(items) {
+  const here = new Set(items.map((t) => t.id));
+  S.sel = new Set([...S.sel].filter((id) => here.has(id)));                    // anything ticked on another page or day is not part of this list
+  const bar = h('div'), tbl = h('div'), box = h('div', null, bar, tbl);
+  const paintBar = () => bar.replaceChildren(...(S.sel.size ? [selectionBar(items, (full) => { if (full) paintTable(); else paintBar(); })] : []));
+  const paintTable = () => { tbl.replaceChildren(txTable(items, false, null, { changed: paintBar })); paintBar(); };
+  paintTable();
+  return box;
+}
+
 // The bar that appears above the list while selecting.
 function selectionBar(items, repaint) {
   const n = S.sel.size;

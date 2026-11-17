@@ -978,3 +978,35 @@ html.phone #sync-line { display: none; }
 .ledger.tx tbody tr.tx-row:hover { background: color-mix(in srgb, var(--brass) 7%, transparent); }
 .ledger.tx tbody tr.tx-row:active { background: color-mix(in srgb, var(--brass) 14%, transparent); }
 .ledger.tx tbody tr.tx-row:focus-visible { outline: 2px solid var(--brass); outline-offset: -2px; }
+
+.inv-lot-table tr.tx-row, .ledger.tx tr.tx-row { cursor: pointer; }
+.inv-lot-table tr.tx-row:hover { background: color-mix(in srgb, var(--brass) 7%, transparent); }
+
+/* ---- investment page on a phone: the trade history and the lots read as small labelled cards */
+.inv-hist tr.tx-row, .inv-lot-table tr.tx-row { cursor: pointer; }
+.inv-hist tbody tr.tx-row:hover { background: color-mix(in srgb, var(--brass) 7%, transparent); }
+.t-side-inline { display: none; }
+@media (max-width: 720px) {
+  .ledger.stack.inv-hist tr { grid-template-columns: 38px repeat(6, minmax(0, 1fr)); gap: 6px 8px; align-items: start; padding: 10px 2px;
+    grid-template-areas: "sel head head head head head head" ". sh sh px px amt amt" ". acct acct acct acct real real" ". when when when act act act"; }
+  .ledger.stack.inv-hist td { grid-column: auto; min-width: 0; }
+  .ledger.stack.inv-hist td.c-sel { grid-area: sel; align-self: center; text-align: center; }
+  .ledger.stack.inv-hist td.c-sel input { width: 22px; height: 22px; }
+  .ledger.stack.inv-hist td.t-side { display: none; }
+  .t-side-inline { display: inline-block; margin-right: 8px; vertical-align: 2px; }
+  .ledger.stack.inv-hist td.t-name { grid-area: head; font-size: 16px; align-self: center; }
+  .ledger.stack.inv-hist td.t-name .hint { display: inline; margin-left: 8px; }
+  .ledger.stack.inv-hist td.t-sh { grid-area: sh; text-align: left; }
+  .ledger.stack.inv-hist td.t-px { grid-area: px; text-align: left; }
+  .ledger.stack.inv-hist td.t-amt { grid-area: amt; text-align: right; }
+  .ledger.stack.inv-hist td.t-acct { grid-area: acct; }
+  .ledger.stack.inv-hist td.t-real { grid-area: real; text-align: right; }
+  .ledger.stack.inv-hist td.when { grid-area: when; align-self: center; white-space: nowrap; }
+  .ledger.stack.inv-hist td.act { grid-area: act; justify-content: flex-end; align-self: center; }
+  .ledger.stack.inv-hist td[data-label]::before { display: block; }
+  .ledger.stack.inv-hist td:first-child::before { display: none; }
+  .ledger.stack.inv-hist td.t-amt::before, .ledger.stack.inv-hist td.t-real::before { text-align: right; }
+  .ledger.stack.inv-hist td:empty { display: none; }
+  .inv-lot-table.stack tr.tx-row { grid-template-columns: repeat(3, minmax(0, 1fr)); }
+  .inv-lot-table.stack td:first-child { grid-column: 1 / -1; }
+}
