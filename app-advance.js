@@ -371,7 +371,7 @@ function templateBar(m, redraw) {
   const past = (S.st.frequent || []).filter((t) => t.type === m.type || !m.type);       // typed before: offered without saving anything
   const chip0 = (t) => h('button', { type: 'button', class: 'tpl-chip' + (t.auto ? ' auto' : ''),
     title: `${t.auto ? `記過 ${t.count} 次：` : ''}${t.name}：${TYPE_LABEL[t.type]}${t.category ? '　' + t.category : ''}${asksAmount(t) ? '　點一下會先問金額' : t.amount ? '　' + t.amount : ''}`,
-    onclick: () => useTemplate(m, t, redraw) }, t.type === 'expense' || t.type === 'income' ? catChip(t.category || '未分類', 'sm') : null, t.name, asksAmount(t) ? h('i', { class: 'ask' }, '問金額') : t.amount ? h('i', null, t.amount) : null);
+    onclick: () => useTemplate(m, t, redraw) }, t.type === 'expense' || t.type === 'income' ? catChip(t.category || '未分類', 'sm') : null, h('span', { class: 'tpl-name' }, t.name), asksAmount(t) ? h('i', { class: 'ask' }, '問金額') : t.amount ? h('i', null, t.amount) : null);
   const chip = (t) => !t.auto ? chip0(t) : h('span', { class: 'tpl-chip-wrap' }, chip0(t),
     h('button', { type: 'button', class: 'tpl-x', title: '不要再顯示這個', 'aria-label': `不要再顯示「${t.name}」`, onclick: async () => {
       try { await api('POST', '/api/frequent/hide', { key: t.key }); S.st.frequent = (S.st.frequent || []).filter((x) => x.key !== t.key); toast('不會再顯示這個；想找回來，到「管理」按「恢復全部」'); redraw(); } catch (e) { fail(e); }

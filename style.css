@@ -1010,3 +1010,37 @@ html.phone #sync-line { display: none; }
   .inv-lot-table.stack tr.tx-row { grid-template-columns: repeat(3, minmax(0, 1fr)); }
   .inv-lot-table.stack td:first-child { grid-column: 1 / -1; }
 }
+
+/* ---- phone layout audit fixes (tools/mobile_audit.py): readable numbers, big enough tap areas, nothing wider than the screen ---- */
+.tpl-chip .tpl-name { overflow: hidden; text-overflow: ellipsis; white-space: nowrap; min-width: 0; }
+.tpl-chip { max-width: min(260px, 72vw); }
+label.row-inline { flex-wrap: nowrap; align-items: flex-start; }
+@media (max-width: 720px) {
+  .cal-in, .cal-out, .cal-nums .cal-net { font-size: 10.5px; }
+  .tag-chip { min-height: 32px; display: inline-flex; align-items: center; }
+  .tag-chip.sm { min-height: 0; display: inline; position: relative; }
+  .tag-chip.sm::after { content: ""; position: absolute; inset: -8px -3px; }          /* the small tag inside a row keeps its look but gets a thumb-sized touch area */
+  .tpl-x { width: 28px; height: 28px; right: 2px; }
+  .tpl-chip-wrap .tpl-chip { padding-right: 32px; min-height: 34px; }
+  .day-toggle { padding: 6px 4px; margin: -6px -4px; min-height: 32px; }
+  summary.hint { padding: 7px 0; }
+  .ex-board td input { width: 100%; max-width: 120px; }
+}
+@media (max-width: 359px) {
+  .cal-in, .cal-out, .cal-nums .cal-net { font-size: 10px; }
+  .cal-cell { padding-left: 1px; padding-right: 1px; }
+}
+@media (max-width: 720px) {
+  label:has(> input[type="checkbox"]) { min-height: 32px; align-items: center; }
+  .tpl-x { width: 30px; height: 30px; }
+  .ledger.tx .note { min-width: 0; max-width: 100%; box-sizing: border-box; }
+}
+/* A phone dialog is a column: head and buttons keep their size, only the middle scrolls. (A fixed height for the middle let the buttons slide off the
+   screen whenever they wrapped onto two rows on a narrow phone or the title was long.) */
+@media (max-width: 720px) {
+  dialog[open] { display: flex; flex-direction: column; }
+  dialog[open] > form { display: flex; flex-direction: column; min-height: 0; flex: 1 1 auto; }
+  dialog[open] > form > .dlg-head, dialog[open] > form > .dlg-foot { flex: 0 0 auto; }
+  dialog[open] > form > .dlg-body, html.kb-open dialog[open] > form > .dlg-body { flex: 1 1 auto; min-height: 0; max-height: none; }
+}
+@media (max-width: 720px) { .rows { grid-template-columns: minmax(0, 1fr); } .rows > * { min-width: 0; } }       /* a form column never grows wider than the screen */

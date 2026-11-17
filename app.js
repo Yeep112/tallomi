@@ -1160,7 +1160,7 @@ async function viewSettings(view) {
   await settingsPhone(view);
 
   // --- google sheets
-  const keyIn = h('input', { value: sh.key, placeholder: '貼上試算表網址或 ID', style: 'min-width:340px', 'aria-label': '試算表網址或 ID' });
+  const keyIn = h('input', { value: sh.key, placeholder: '貼上試算表網址或 ID', style: 'min-width:min(340px,100%)', 'aria-label': '試算表網址或 ID' });
   const wsIn = h('input', { value: sh.worksheet, 'aria-label': '工作表名稱' });
   const auto = h('input', { type: 'checkbox', checked: sh.auto });
   const fileIn = h('input', { type: 'file', accept: '.json,application/json', 'aria-label': '服務帳戶金鑰', onchange: async (e) => {
