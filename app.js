@@ -417,7 +417,16 @@ function pageSwipeTarget(dir) {
   // the page follows the finger while it is down; a hint at the top names the page it will open and says when letting go will do it.
   // Letting go past a third of the width (or after a quick flick) slides the page away and opens the neighbour, otherwise it springs back.
   const atAt = () => Math.min(130, Math.max(PAGE_SWIPE_AT, document.documentElement.clientWidth * 0.28));
-  let raf = 0, hint = null;
+  let raf = 0, hint = null, peek = null;
+  // the neighbouring page's place-holder, parked beside the page and carried along with it, so the next page really comes in from the side
+  const peekFor = (dx, to) => {
+    const W = document.documentElement.clientWidth;
+    if (!to) { if (peek) { peek.remove(); peek = null; } return; }
+    const a = document.querySelector(`.nav a[data-route="${to}"]`); if (!a) return;
+    if (!peek) { document.querySelectorAll('.page-peek').forEach((n) => n.remove()); peek = h('div', { class: 'page-peek', 'aria-hidden': 'true' }, h('span', {}, '')); document.body.appendChild(peek); }
+    peek.firstChild.textContent = a.textContent.trim();
+    peek.style.transform = `translate3d(${dx + (dx < 0 ? W : -W)}px,0,0)`;
+  };
   const hintFor = (dx, to, armed) => {
     if (!to) { if (hint) { hint.remove(); hint = null; } return; }
     const a = document.querySelector(`.nav a[data-route="${to}"]`); if (!a) return;
@@ -434,10 +443,10 @@ function pageSwipeTarget(dir) {
       st.on = true; st.x0 = e.clientX - Math.sign(dx) * 0; view().style.transition = 'none'; view().style.willChange = 'transform';
     }
     const to = pageSwipeTarget(dx < 0 ? 1 : -1);
-    st.dx = to ? dx : dx * 0.25;                                                         // nothing on that side: only a little rubber band
+    st.real = !!to; st.dx = to ? dx : dx * 0.25;                                                         // nothing on that side: only a little rubber band
     const armed = !!to && Math.abs(dx) >= atAt();
     if (armed !== st.armed) { st.armed = armed; if (armed && navigator.vibrate) { try { navigator.vibrate(8); } catch { /* not supported */ } } }
-    if (!raf) raf = requestAnimationFrame(() => { raf = 0; if (st && st.on) { view().style.transform = `translate3d(${st.dx}px,0,0)`; hintFor(st.dx, pageSwipeTarget(st.dx < 0 ? 1 : -1), !!st.armed); } });
+    if (!raf) raf = requestAnimationFrame(() => { raf = 0; if (st && st.on) { view().style.transform = `translate3d(${st.dx}px,0,0)`; const t2 = pageSwipeTarget(st.dx < 0 ? 1 : -1); hintFor(st.dx, t2, !!st.armed); peekFor(st.dx, st.real ? t2 : null); } });
   });
   document.addEventListener('pointerup', (e) => {
     if (!st) return; const { on, t } = st; const dx = e.clientX - st.x, dy = e.clientY - st.y; st = null;
@@ -448,18 +457,21 @@ function pageSwipeTarget(dir) {
     const dir = dx < 0 ? 1 : -1;
     const flick = Math.abs(dx) > 40 && Math.abs(dx) / Math.max(1, performance.now() - t) > 0.3;      // a quick short flick also counts (over 0.3 px per ms on the whole way)
     const to = (Math.abs(dx) >= atAt() || flick) && Math.abs(dx) >= Math.abs(dy) * 1.5 ? pageSwipeTarget(dir) : null;
-    if (!to) { spring(vw); return; }
+    if (!to) { peekFor(0, null); spring(vw); return; }
     const W = document.documentElement.clientWidth;
-    vw.style.transition = 'transform .14s ease-in, opacity .14s'; vw.style.transform = `translate3d(${dx < 0 ? -W * 0.5 : W * 0.5}px,0,0)`; vw.style.opacity = '0';
+    const out = dx < 0 ? -W : W, left = Math.max(0.12, Math.min(0.26, (W - Math.abs(dx)) / W * 0.3));     // finish the slide from where the finger let go
+    vw.style.transition = `transform ${left}s cubic-bezier(.3,.7,.3,1)`; vw.style.transform = `translate3d(${out}px,0,0)`;
+    if (peek) { peek.style.transition = `transform ${left}s cubic-bezier(.3,.7,.3,1)`; peek.style.transform = 'translate3d(0,0,0)'; }
     setTimeout(() => {
-      vw.style.transition = 'none'; vw.style.transform = ''; vw.style.opacity = '';
-      vw.classList.remove('slide-l', 'slide-r'); void vw.offsetWidth; vw.classList.add(dx < 0 ? 'slide-l' : 'slide-r'); setTimeout(() => vw.classList.remove('slide-l', 'slide-r'), 260);
-      vw.style.transition = '';
+      vw.style.transition = 'none'; vw.style.transform = '';
       location.hash = '#/' + to;
       pageNameToast(to);
-    }, 140);
+      const pk = peek; peek = null;
+      if (pk) setTimeout(() => { pk.style.transition = 'opacity .16s'; pk.style.opacity = '0'; setTimeout(() => pk.remove(), 200); }, 150);   // the real page has been built by now: let the place-holder fade off
+      vw.style.transition = '';
+    }, left * 1000 + 10);
   });
-  document.addEventListener('pointercancel', () => { if (st && st.on) { const v = view(); v.style.opacity = ''; v.style.willChange = ''; if (hint) { hint.remove(); hint = null; } spring(v); } st = null; });
+  document.addEventListener('pointercancel', () => { if (st && st.on) { const v = view(); v.style.opacity = ''; v.style.willChange = ''; if (hint) { hint.remove(); hint = null; } peekFor(0, null); spring(v); } st = null; });
   document.addEventListener('click', (e) => { if (Date.now() - (S.pageSwiped || 0) < 400) { e.stopPropagation(); e.preventDefault(); } }, true);
 }
 // The new page's name, shown at the top for a moment, so a quick run of swipes never loses the way.
