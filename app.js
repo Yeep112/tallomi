@@ -126,6 +126,54 @@ function unlockScroll() {
   root.classList.remove('modal-open', 'modal-pinned'); document.body.style.top = ''; document.body.style.paddingRight = '';
   if (pinned) window.scrollTo(0, lockedY);
 }
+// 1.53.0 — on a phone a sheet can be pulled down with a finger to leave it: start on the title strip, or on the content while it is scrolled to the top.
+// Past SWIPE_DOWN px (or a quick flick) it closes like the cancel button; otherwise it springs back. Boxes, menus and scrolled content are left alone.
+const SWIPE_DOWN = 110;
+function swipeDownClose(dlg, canClose) {
+  let y0 = 0, x0 = 0, t0 = 0, dy = 0, mode = '';           // mode: '' idle, 'track' finger down, 'drag' pulling, 'no' not ours
+  const sheetNow = () => window.matchMedia(PHONE_Q).matches;
+  dlg.addEventListener('touchstart', (e) => {
+    mode = '';
+    if (!sheetNow() || e.touches.length !== 1 || !canClose()) { mode = 'no'; return; }
+    const t = e.target;
+    if (t.closest && t.closest('input,select,textarea,button,a,[contenteditable],.no-sheet-swipe')) { mode = 'no'; return; }
+    const body = t.closest && t.closest('.dlg-body');
+    if (body) {
+      // anything inside that scrolls (the content itself, or a wide table) must be at its top-left edge, else the finger is scrolling
+      for (let n = t; n && n !== dlg; n = n.parentElement) if (n.scrollTop > 0 || n.scrollLeft > 0) { mode = 'no'; return; }
+    }
+    y0 = e.touches[0].clientY; x0 = e.touches[0].clientX; t0 = Date.now(); dy = 0; mode = 'track';
+  }, { passive: true });
+  dlg.addEventListener('touchmove', (e) => {
+    if (mode === 'no' || mode === '') return;
+    const dyNow = e.touches[0].clientY - y0, dx = e.touches[0].clientX - x0;
+    if (mode === 'track') {
+      if (Math.abs(dx) > 10 && Math.abs(dx) > Math.abs(dyNow)) { mode = 'no'; return; }        // sideways: a scrolling table or a swipe row, not ours
+      if (dyNow < -6) { mode = 'no'; return; }                                                // upwards: normal scrolling
+      if (dyNow < 8) return;
+      mode = 'drag'; dlg.style.transition = 'none';
+    }
+    dy = Math.max(0, dyNow);
+    e.preventDefault();                                                                       // we own this gesture now: no scroll, no pull-to-refresh
+    dlg.style.transform = `translateY(${dy}px)`;
+  }, { passive: false });
+  const end = () => {
+    if (mode !== 'drag') { mode = ''; return; }
+    mode = '';
+    const fast = dy > 40 && (Date.now() - t0) < 260;
+    dlg.style.transition = 'transform .18s ease-out';
+    if ((dy > SWIPE_DOWN || fast) && canClose()) {
+      dlg.style.transform = 'translateY(100%)';
+      setTimeout(() => dlg.close(), 150);
+    } else {
+      dlg.style.transform = '';
+      setTimeout(() => { dlg.style.transition = ''; }, 200);
+    }
+  };
+  dlg.addEventListener('touchend', end);
+  dlg.addEventListener('touchcancel', end);
+}
+
 function openDialog({ title, body, primary, wide, extraFoot, cancelLabel = '取消' }) {
   const dlg = h('dialog', { class: wide ? 'wide' : '', 'aria-label': title });
   const errBox = h('div', { class: 'neg', role: 'alert' });
@@ -152,6 +200,7 @@ function openDialog({ title, body, primary, wide, extraFoot, cancelLabel = '取�
   let downOutside = false;
   dlg.addEventListener('pointerdown', (e) => { downOutside = e.target === dlg && outside(e); });
   dlg.addEventListener('click', (e) => { if (e.target === dlg && downOutside && outside(e) && !submit.disabled) dlg.close(); downOutside = false; });
+  swipeDownClose(dlg, () => !submit.disabled);
   document.body.appendChild(dlg);
   lockScroll();
   dlg.showModal();
@@ -235,6 +284,16 @@ function eyeButton(page) {
   return btn;
 }
 
+// The short explanation under a page title. On the phone it waits behind a small "ⓘ" next to the title (the paragraph pushed the page down by 100-150px); on a computer it stays visible.
+function pageIntro(text) {
+  if (!isPhone()) return { btn: null, p: h('p', { class: 'sub' }, text) };
+  const p = h('p', { class: 'sub intro-note', hidden: true }, text);
+  const btn = h('button', { class: 'info-btn', type: 'button', 'aria-label': '這一頁的說明', 'aria-expanded': 'false', title: '說明', onclick: () => {
+    const open = p.hidden; p.hidden = !open; btn.setAttribute('aria-expanded', String(open)); btn.classList.toggle('on', open);
+  } }, 'ⓘ');
+  return { btn, p };
+}
+
 async function refresh() {
   S.st = await api('GET', '/api/state');
   S.lastRefresh = Date.now(); S.day = nowLocal().slice(0, 10);
@@ -308,12 +367,110 @@ function navReveal() {
 }
 { const n = document.querySelector('.nav'); if (n) n.addEventListener('scroll', navEdges, { passive: true }); }
 window.addEventListener('resize', navEdges);
+
+// The round "記一筆" button steps out of the way while the page scrolls down (it sat on top of the 編輯 button at the end of a row) and comes back as soon as the page scrolls up or reaches the top.
+{
+  let lastY = window.scrollY, run = 0;
+  window.addEventListener('scroll', () => {
+    const y = window.scrollY, d = y - lastY; lastY = y;
+    if (y < 80) { run = 0; document.documentElement.classList.remove('fab-away'); return; }
+    run = (run > 0) === (d > 0) ? run + d : d;
+    if (run > 14) document.documentElement.classList.add('fab-away');
+    else if (run < -10) document.documentElement.classList.remove('fab-away');
+  }, { passive: true });
+}
 const ROUTES = { overview: viewOverview, calendar: viewCalendar, advances: viewAdvances, transactions: viewTransactions, exchange: viewExchange, invest: viewInvest, accounts: viewAccounts, reports: viewReports, categories: viewCategories, tags: viewTags, settings: viewSettings };
 function currentRoute() { const r = (location.hash || '').replace('#/', ''); return ROUTES[r] ? r : 'overview'; }
 // Leaving a page keeps its finished picture for a few minutes; coming back shows it at once while the fresh data loads behind it
 // (the same swap used for a live change), so switching pages never starts from a blank screen.
 const routeSnaps = {};
 const SNAP_MAX_AGE = 10 * 60 * 1000;
+// 1.53.0 — on a phone, slide a finger left/right over the page to go to the next/previous page of the main menu (總覽 ⇄ 月曆 ⇄ 交易 …).
+// Not started on things that already use a sideways move: swipeable rows, the calendar grid, anything that scrolls sideways, charts, fields, sheets.
+const PAGE_SWIPE_AT = 70;
+function pageSwipeSkip(t) {
+  if (!t || !t.closest) return true;
+  if (t.closest('dialog, input, select, textarea, canvas, .swipeable, .cal, .nav, .no-page-swipe, [draggable=true], .tile.lifted, .tpl-row, .kb, summary')) return true;
+  for (let n = t; n && n !== document.body; n = n.parentElement) {
+    if (n.scrollWidth > n.clientWidth + 2) { const ox = getComputedStyle(n).overflowX; if (ox === 'auto' || ox === 'scroll') return true; }
+  }
+  return false;
+}
+function pageSwipeTarget(dir) {
+  const links = [...document.querySelectorAll('.nav a[data-route]')].filter((a) => !a.hidden && a.offsetParent !== null || a.getClientRects().length);
+  const i = links.findIndex((a) => a.dataset.route === S.route);
+  if (i < 0) return null;
+  const to = links[i + dir];
+  return to ? to.dataset.route : null;
+}
+{
+  let st = null;
+  const view = () => $('#view');
+  const spring = (v) => { v.style.transition = 'transform .22s cubic-bezier(.2,.8,.3,1)'; v.style.transform = ''; setTimeout(() => { v.style.transition = ''; }, 200); };
+  document.addEventListener('pointerdown', (e) => {
+    st = null;
+    if (e.pointerType !== 'touch' || !e.isPrimary || !isPhone() || document.querySelector('dialog[open]')) return;
+    const W = document.documentElement.clientWidth;
+    if (e.clientX < 22 || e.clientX > W - 22 || pageSwipeSkip(e.target)) return;      // the screen's edges belong to the system's own swipe-back
+    st = { x: e.clientX, y: e.clientY, on: false, dx: 0, t: performance.now() };
+  });
+  // the page follows the finger while it is down; a hint at the top names the page it will open and says when letting go will do it.
+  // Letting go past a third of the width (or after a quick flick) slides the page away and opens the neighbour, otherwise it springs back.
+  const atAt = () => Math.min(130, Math.max(PAGE_SWIPE_AT, document.documentElement.clientWidth * 0.28));
+  let raf = 0, hint = null;
+  const hintFor = (dx, to, armed) => {
+    if (!to) { if (hint) { hint.remove(); hint = null; } return; }
+    const a = document.querySelector(`.nav a[data-route="${to}"]`); if (!a) return;
+    if (!hint) { document.querySelectorAll('.page-pill').forEach((n) => n.remove()); hint = h('div', { class: 'page-pill hint', role: 'status' }); document.body.appendChild(hint); }
+    hint.classList.toggle('armed', armed);
+    hint.textContent = (dx < 0 ? '' : '‹ ') + a.textContent.trim() + (dx < 0 ? ' ›' : '');
+  };
+  document.addEventListener('pointermove', (e) => {
+    if (!st) return;
+    const dx = e.clientX - st.x, dy = e.clientY - st.y;
+    if (!st.on) {
+      if (Math.abs(dy) > 12 && Math.abs(dy) >= Math.abs(dx) / 1.5) { st = null; return; }    // scrolling, not swiping
+      if (Math.abs(dx) < 10 || Math.abs(dx) < Math.abs(dy) * 2) return;
+      st.on = true; st.x0 = e.clientX - Math.sign(dx) * 0; view().style.transition = 'none'; view().style.willChange = 'transform';
+    }
+    const to = pageSwipeTarget(dx < 0 ? 1 : -1);
+    st.dx = to ? dx : dx * 0.25;                                                         // nothing on that side: only a little rubber band
+    const armed = !!to && Math.abs(dx) >= atAt();
+    if (armed !== st.armed) { st.armed = armed; if (armed && navigator.vibrate) { try { navigator.vibrate(8); } catch { /* not supported */ } } }
+    if (!raf) raf = requestAnimationFrame(() => { raf = 0; if (st && st.on) { view().style.transform = `translate3d(${st.dx}px,0,0)`; hintFor(st.dx, pageSwipeTarget(st.dx < 0 ? 1 : -1), !!st.armed); } });
+  });
+  document.addEventListener('pointerup', (e) => {
+    if (!st) return; const { on, t } = st; const dx = e.clientX - st.x, dy = e.clientY - st.y; st = null;
+    if (!on) return;
+    S.pageSwiped = Date.now();
+    const vw = view(); vw.style.willChange = '';
+    if (hint) { hint.remove(); hint = null; }
+    const dir = dx < 0 ? 1 : -1;
+    const flick = Math.abs(dx) > 40 && Math.abs(dx) / Math.max(1, performance.now() - t) > 0.3;      // a quick short flick also counts (over 0.3 px per ms on the whole way)
+    const to = (Math.abs(dx) >= atAt() || flick) && Math.abs(dx) >= Math.abs(dy) * 1.5 ? pageSwipeTarget(dir) : null;
+    if (!to) { spring(vw); return; }
+    const W = document.documentElement.clientWidth;
+    vw.style.transition = 'transform .14s ease-in, opacity .14s'; vw.style.transform = `translate3d(${dx < 0 ? -W * 0.5 : W * 0.5}px,0,0)`; vw.style.opacity = '0';
+    setTimeout(() => {
+      vw.style.transition = 'none'; vw.style.transform = ''; vw.style.opacity = '';
+      vw.classList.remove('slide-l', 'slide-r'); void vw.offsetWidth; vw.classList.add(dx < 0 ? 'slide-l' : 'slide-r'); setTimeout(() => vw.classList.remove('slide-l', 'slide-r'), 260);
+      vw.style.transition = '';
+      location.hash = '#/' + to;
+      pageNameToast(to);
+    }, 140);
+  });
+  document.addEventListener('pointercancel', () => { if (st && st.on) { const v = view(); v.style.opacity = ''; v.style.willChange = ''; if (hint) { hint.remove(); hint = null; } spring(v); } st = null; });
+  document.addEventListener('click', (e) => { if (Date.now() - (S.pageSwiped || 0) < 400) { e.stopPropagation(); e.preventDefault(); } }, true);
+}
+// The new page's name, shown at the top for a moment, so a quick run of swipes never loses the way.
+function pageNameToast(route) {
+  const a = document.querySelector(`.nav a[data-route="${route}"]`); if (!a) return;
+  document.querySelectorAll('.page-pill').forEach((n) => n.remove());
+  const pill = h('div', { class: 'page-pill', role: 'status' }, a.textContent.trim());
+  document.body.appendChild(pill);
+  setTimeout(() => pill.classList.add('out'), 900);
+  setTimeout(() => pill.remove(), 1250);
+}
 async function renderRoute() {
   if (!S.st) return;
   const my = (S.renderSeq = (S.renderSeq || 0) + 1);
@@ -610,6 +767,26 @@ function budgetCard() {
       list.length > 5 ? h('button', { class: 'btn sm ghost', type: 'button', onclick: () => { S.budAll = !S.budAll; renderRoute(); } }, S.budAll ? '只顯示最接近上限的 5 個' : `顯示全部 ${list.length} 個`) : null));
 }
 // The top of the overview: total assets, this month's balance and how it compares with last month's first days.
+// How the total is made up. 資產 = the stock accounts (valued at what was paid for them); 現金流 = cash, bank and post-office accounts;
+// 總資產 = both together; 總負債 = every account that is below zero; 淨資產 = 總資產 − 總負債 (this is what the book's "total" has always been).
+function wealthParts() {
+  let stocks = 0, cash = 0, debts = 0;
+  for (const a of S.st.accounts) {
+    if (a.archived && !a.balance) continue;
+    const v = a.base_value; if (v == null) continue;
+    if (v < 0) debts += -v; else if (a.stock) stocks += v; else cash += v;
+  }
+  const gross = stocks + cash;
+  return { stocks, cash, debts, gross, net: gross - debts };
+}
+function wealthRow(w, base, cls) {
+  const cell = (label, val, tone, tip) => h('div', { class: 'wp-cell', title: tip || null }, h('span', { class: 'label muted' }, label), h('b', { class: 'num ' + (tone || '') }, num(val, base)));
+  return h('div', { class: 'wealth-parts ' + (cls || ''), role: 'group', 'aria-label': '總資產的組成' },
+    cell('資產（股票）', w.stocks, '', '所有股票帳戶，依付出成本計算'),
+    cell('現金流（現金與銀行）', w.cash, '', '現金、銀行、郵局等非股票帳戶的餘額'),
+    cell('總負債', -w.debts, w.debts ? 'neg' : '', '餘額低於 0 的帳戶（例如信用卡）'),
+    cell('淨資產', w.net, w.net < 0 ? 'neg' : 'pos', '淨資產 ＝ 總資產 － 總負債'));
+}
 function overviewTop(s, base) {
   const net = s.month.income - s.month.expense, p = s.prev_month;
   const hasPrev = p && (p.income_so_far || p.expense_so_far || p.income || p.expense);
@@ -619,8 +796,13 @@ function overviewTop(s, base) {
     delta = d === 0 ? h('span', { class: 'w-delta' }, '和上月同期一樣')
       : h('span', { class: 'w-delta ' + (d > 0 ? 'pos' : 'neg'), title: `上月 1–${p.day} 日的結餘和這個月到今天相比` }, `比上月同期${d > 0 ? '多' : '少'} `, h('b', { class: 'num' }, num(Math.abs(d), base)));
   }
+  const parts = wealthRow(wealthParts(), base);
+  // phone: the four parts are one line you can slide sideways; tapping the total opens them as a grid
+  const toggleParts = () => { const on = parts.classList.toggle('open'); const t = parts.parentNode && parts.parentNode.querySelector('.w-total'); if (t) t.setAttribute('aria-expanded', String(on)); };
   return h('div', { class: 'worth top' },
-    h('div', { class: 'w-total' }, h('div', { class: 'label' }, `總資產（${base}）`), h('div', { class: 'big' }, num(s.total, base), h('small', null, base))),
+    h('div', { class: 'w-total', role: 'button', tabindex: '0', 'aria-expanded': 'false', title: '點一下展開／收合組成', onclick: toggleParts, onkeydown: (e) => { if (e.key === 'Enter' || e.key === ' ') { e.preventDefault(); toggleParts(); } } },
+      h('div', { class: 'label' }, `總資產（${base}）`, h('span', { class: 'w-chev', 'aria-hidden': 'true' }, '▾')), h('div', { class: 'big' }, num(wealthParts().gross, base), h('small', null, base))),
+    parts,
     h('div', { class: 'w-month' }, h('span', { class: 'label muted' }, `${Number(s.month.label.slice(5))} 月結餘`), h('b', { class: 'w-net ' + (net >= 0 ? 'pos' : 'neg') }, num(net, base, true)), delta),
     h('div', { class: 'month' },
       h('div', null, h('span', { class: 'label muted' }, '收入'), h('b', { class: 'pos' }, num(s.month.income, base))),
@@ -695,6 +877,11 @@ function rowTap(open) {
     onkeydown: (e) => { if ((e.key === 'Enter' || e.key === ' ') && e.target === e.currentTarget) { e.preventDefault(); open(); } },
   };
 }
+// One tap and two quick taps on the same row do different things (the single tap waits a moment to see whether a second one follows).
+function rowTapDouble(single, dbl) {
+  let timer = 0;
+  return rowTap(() => { if (timer) { clearTimeout(timer); timer = 0; dbl(); } else timer = setTimeout(() => { timer = 0; single(); }, 280); });
+}
 const isPhone = () => window.matchMedia(PHONE_Q).matches;
 const VIRTUAL_MIN = 30;                  // a day-grouped list with this many lines is drawn a window at a time (virtualBody in app-list.js)
 
@@ -768,7 +955,7 @@ function tallyBar(r, filtered, onToggle) {
     cell('總支出', num(t.expense, base), 'neg'),
     cell('淨額（收入 − 支出）', num(t.net, base, true), t.net >= 0 ? 'pos' : 'neg'),
     ...(() => {
-      const toggle = h('label', { class: 'tally-toggle' }, h('input', { type: 'checkbox', checked: S.txf.transfers, onchange: (e) => onToggle(e.target.checked) }), h('span', null, '轉帳也算收支'));
+      const toggle = h('label', { class: 'tally-toggle' }, h('input', { type: 'checkbox', checked: S.txf.transfers, onchange: (e) => onToggle(e.target.checked) }), h('span', null, '顯示轉帳'), h('small', { class: 'muted', title: '只影響這一頁的清單與合計，不會改動總覽、月曆、報表的「轉帳也算收支」設定' }, '（只影響這頁）'));
       const note = side.length ? h('div', { class: 'tally-note hint' }, side.join('；')) : null;
       return isPhone() ? [h('details', { class: 'tally-more' }, h('summary', null, '轉帳與換算說明'), toggle, note)] : [toggle, note];     // a phone keeps the list near the top: the small print folds away
     })());
@@ -1073,15 +1260,22 @@ function accountList(rows, base) {
 }
 // The net worth at the top: what you own, what you owe, and the total, in the main currency.
 function netWorthCard(accounts, base) {
-  let assets = 0, debts = 0;
-  for (const a of accounts) { if (a.archived && !a.balance) continue; const v = a.base_value; if (v == null) continue; if (v >= 0) assets += v; else debts += v; }
-  const total = S.st.summary.total, missing = S.st.summary.missing_rates || [];
+  const w = wealthParts(), missing = S.st.summary.missing_rates || [];
   return h('div', { class: 'net-card' },
-    h('div', { class: 'net-main' }, h('span', { class: 'label muted' }, `淨資產（${base}）`), h('b', { class: 'big num' + (total < 0 ? ' neg' : '') }, num(total, base), h('small', null, base))),
-    h('div', { class: 'net-parts' },
-      h('span', null, h('span', { class: 'label muted' }, '資產'), h('b', { class: 'num pos' }, num(assets, base))),
-      h('span', null, h('span', { class: 'label muted' }, '負債'), h('b', { class: 'num' + (debts < 0 ? ' neg' : '') }, num(debts, base)))),
+    h('div', { class: 'net-main' }, h('span', { class: 'label muted' }, `總資產（${base}）`), h('b', { class: 'big num' }, num(w.gross, base), h('small', null, base))),
+    wealthRow(w, base, 'in-card'),
     missing.length ? h('div', { class: 'hint net-note' }, `缺少 ${missing.join('、')} 的匯率，這些帳戶還沒有算進去。`) : null);
+}
+// The accounts page in the same three parts as the total on the overview: stock accounts, cash / bank accounts and debts (below zero, or a credit card).
+function accountGroups(rows) {
+  const isCard = (a) => /信用卡|credit|visa|master|jcb/i.test(a.name || '');
+  const kind = (a) => ((a.base_value != null && a.base_value < 0) || (isCard(a) && !a.stock && !(a.base_value > 0)) ? 'debt' : a.stock ? 'stock' : 'cash');
+  const defs = [['stock', '資產（股票）'], ['cash', '現金流（現金與銀行）'], ['debt', '負債']];
+  return defs.map(([k, title]) => {
+    const r = rows.filter((a) => kind(a) === k);
+    const sum = r.reduce((t, a) => t + (a.base_value == null ? 0 : k === 'debt' ? Math.min(0, a.base_value) : a.base_value), 0);
+    return { kind: k, title, rows: r, sum };
+  }).filter((g) => g.rows.length);
 }
 async function viewAccounts(view) {
   const base = S.st.base, phone = isPhone();
@@ -1104,7 +1298,9 @@ async function viewAccounts(view) {
     h('div', { class: 'page-head' }, h('div', null, h('h1', null, '帳戶', eyeButton('accounts')), phone ? null : h('p', { class: 'sub' }, about)),
       h('div', { class: 'head-btns' }, h('button', { class: 'btn', onclick: () => openCalibrateDialog(null) }, '校正餘額'), h('button', { class: 'btn primary', onclick: () => openAccountDialog(null) }, '新增帳戶'))),
     active.length ? netWorthCard(S.st.accounts, base) : null,
-    h('section', { class: 'section' }, active.length ? list(active) : h('div', { class: 'empty' }, h('b', null, '還沒有帳戶'), '按右上角「新增帳戶」開始。')));
+    ...(active.length ? accountGroups(active).map((g) => h('section', { class: 'section acc-group', 'data-kind': g.kind },
+      h('div', { class: 'section-head' }, h('h2', null, g.title), h('span', { class: 'acc-sub num' + (g.sum < 0 ? ' neg' : '') }, num(g.sum, base), h('small', { class: 'ccy' }, base))), list(g.rows)))
+      : [h('section', { class: 'section' }, h('div', { class: 'empty' }, h('b', null, '還沒有帳戶'), '按右上角「新增帳戶」開始。'))]));
   if (archived.length) view.append(h('section', { class: 'section' }, h('div', { class: 'section-head' }, h('h2', null, '已封存')), list(archived)));
   if (phone) view.append(h('p', { class: 'hint' }, about));
 }
@@ -1162,9 +1358,55 @@ function drawBreakdown(box, data, kind, byCategory = true) {
   }
 }
 
+// The four numbers above the report charts: total spent, daily average, the biggest group and the change against the period before it.
+// A month still going is compared with the same number of days of the month before; a year still going, with the whole months of the year before.
+async function keyFigures(d, r) {
+  const base = d.base, spent = Number(d.expense.total) || 0, now = new Date(), nowY = now.getFullYear(), nowM = now.getMonth() + 1;
+  const sum = (a) => a.reduce((x, y) => x + (Number(y) || 0), 0);
+  let days;
+  if (r.month) {
+    days = r.year > nowY || (r.year === nowY && r.month > nowM) ? 0 : (r.year === nowY && r.month === nowM) ? now.getDate() : new Date(r.year, r.month, 0).getDate();
+  } else {
+    const start = new Date(r.year, 0, 1), end = new Date(r.year + 1, 0, 1);
+    days = r.year > nowY ? 0 : r.year === nowY ? Math.round((new Date(nowY, now.getMonth(), now.getDate()) - start) / 86400000) + 1 : Math.round((end - start) / 86400000);
+  }
+  const top = d.expense.groups[0], topName = { category: '最大類別', note: '最大備註', tag: '最大標籤' }[d.group_by] || '最大項目';
+  const cell = (label, value, sub, cls) => h('div', { class: 'kpi' }, h('span', { class: 'kpi-label' }, label), h('b', { class: 'kpi-val num ' + (cls || '') }, value), h('small', { class: 'kpi-sub' }, sub));
+  const cmp = h('div', { class: 'kpi' }, h('span', { class: 'kpi-label' }, r.month ? '比上月' : '比去年'), h('b', { class: 'kpi-val num' }, '…'), h('small', { class: 'kpi-sub' }, ' '));
+  const box = h('div', { class: 'kpis', role: 'group', 'aria-label': '重點數字' },
+    cell('總支出', [num(spent, base), h('span', { class: 'ccy' }, base)], `收入 ${num(d.income.total, base)} ${base}`, 'neg'),
+    cell('日均支出', days ? num(spent / days >= 100 ? Math.round(spent / days) : roundTo(spent / days, digits(base)), base) : '—', days ? `${days} 天` : '還沒到這段期間'),
+    cell(topName, top && top.total ? top.label : '—', top && top.total && spent ? `${num(top.total, base)} · 占 ${Math.round(top.total / spent * 100)}%` : ' '),
+    cmp);
+  const fill = (v, sub, cls) => { cmp.querySelector('.kpi-val').textContent = v; cmp.querySelector('.kpi-val').className = 'kpi-val num ' + (cls || ''); cmp.querySelector('.kpi-sub').textContent = sub; };
+  (async () => {
+    try {
+      let now_v, prev_v, note;
+      if (r.month) {
+        const pm = r.month === 1 ? [r.year - 1, 12] : [r.year, r.month - 1];
+        const t = await api('GET', `/api/reports/trend?year=${pm[0]}&month=${pm[1]}`);
+        const live = r.year === nowY && r.month === nowM;
+        now_v = spent; prev_v = sum(live ? t.expense.slice(0, now.getDate()) : t.expense);
+        note = live ? `上月前 ${now.getDate()} 天 ${num(prev_v, base)}` : `上月 ${num(prev_v, base)}`;
+      } else {
+        const m = r.year === nowY ? nowM - 1 : 12;
+        if (m < 1 || r.year > nowY) return fill('—', '要滿一個月才能比', '');
+        const [a, b] = await Promise.all([api('GET', `/api/reports/trend?year=${r.year}`), api('GET', `/api/reports/trend?year=${r.year - 1}`)]);
+        now_v = sum(a.expense.slice(0, m)); prev_v = sum(b.expense.slice(0, m));
+        note = `去年 1–${m} 月 ${num(prev_v, base)}`;
+      }
+      if (!(prev_v > 0)) return fill('—', now_v > 0 ? '之前沒有支出可比' : '沒有支出', '');
+      const pct = (now_v - prev_v) / prev_v * 100, r1 = Math.round(Math.abs(pct) * 10) / 10;
+      fill(`${pct > 0 ? '▲' : pct < 0 ? '▼' : ''} ${r1}%`, note, pct > 0 ? 'neg' : pct < 0 ? 'pos' : '');
+    } catch (e) { fill('—', '讀不到比較資料', ''); }
+  })();
+  return box;
+}
+
 async function viewReports(view) {
   const r = S.rp;
-  view.append(h('div', { class: 'page-head' }, h('div', null, h('h1', null, '報表', eyeButton('reports')), h('p', { class: 'sub' }, `金額都換算成 ${S.st.base}（使用目前的匯率）。${S.st.prefs.count_transfers ? '轉帳也算收支：轉出算支出、轉入算收入，類別顯示為「轉帳」；歸零調整不算。' : '轉帳與歸零調整不算收入或支出。'}`))));
+  const intro = pageIntro(`金額都換算成 ${S.st.base}（使用目前的匯率）。${S.st.prefs.count_transfers ? '轉帳也算收支：轉出算支出、轉入算收入，類別顯示為「轉帳」；歸零調整不算。' : '轉帳與歸零調整不算收入或支出。'}`);
+  view.append(h('div', { class: 'page-head' }, h('div', null, h('h1', null, '報表', eyeButton('reports'), intro.btn), intro.p)));
   const out = h('div');
   const draw = async () => {
     S.charts.forEach((c) => c.destroy()); S.charts = [];
@@ -1172,7 +1414,7 @@ async function viewReports(view) {
     try {
       if (r.kind === 'pie' || r.kind === 'bar') {
         const d = await api('GET', `/api/reports/breakdown?year=${r.year}${r.month ? '&month=' + r.month : ''}&group_by=${r.group}&max=8`);
-        const box = h('div', { class: 'charts' }); out.append(box); drawBreakdown(box, d, r.kind, r.group === 'category'); notice(d.missing_rates);
+        const box = h('div', { class: 'charts' }); out.append(box); drawBreakdown(box, d, r.kind, r.group === 'category'); box.before(await keyFigures(d, r)); notice(d.missing_rates);
         if (r.group === 'tag') out.prepend(h('p', { class: 'hint', style: 'margin:10px 0 0' }, '一筆交易有好幾個標籤時，每個標籤各算一次；圖上方的總額每筆只算一次，所以各標籤加起來可能比總額大。沒有標籤的交易歸在「(沒有標籤)」。'));
       } else if (r.kind === 'compare') {
         await drawCompare(out, r);
@@ -1298,11 +1540,49 @@ function groupSettings(nodes) {
   const box = h('input', { type: 'search', placeholder: '搜尋設定（例如：備份、匯率、顏色）', 'aria-label': '搜尋設定', autocomplete: 'off', oninput: (e) => find(e.target.value) });
   return [h('div', { class: 'set-search' }, box), ...groups, none];
 }
+// One place that says whether the data is safe: the last backup (and the second copy) and the Google sheet's state, each with a colour and a way to the setting.
+function statusPanel() {
+  const box = h('section', { class: 'section status-panel' }, h('div', { class: 'section-head' }, h('h2', null, '備份與同步狀態')), h('div', { class: 'sp-rows' }, h('div', { class: 'hint' }, '讀取中…')));
+  const ago = (t) => { const d = (Date.now() - new Date(t).getTime()) / 86400000; return d < 1 / 24 ? '剛剛' : d < 1 ? `${Math.floor(d * 24)} 小時前` : `${Math.floor(d)} 天前`; };
+  const row = (tone, title, text, ...acts) => h('div', { class: 'sp-row ' + tone }, h('span', { class: 'dot ' + (tone === 'ok' ? 'ok' : tone === 'bad' ? 'err' : tone === 'warn' ? 'off' : '') }, ''),
+    h('div', { class: 'sp-main' }, h('b', null, title), h('span', null, text)), h('div', { class: 'sp-acts' }, ...acts));
+  const openGroup = (name, find) => { const g = document.querySelector(`.set-group[data-group="${name}"]`); if (g) { g.open = true; const t = [...g.querySelectorAll('.section-head h2')].find((x) => x.textContent.includes(find)); (t || g).scrollIntoView({ block: 'start', behavior: 'smooth' }); } };
+  (async () => {
+    const rows = [];
+    try {
+      const [ab, bl] = await Promise.all([api('GET', '/api/autobackup').catch(() => null), api('GET', '/api/backups').catch(() => ({ items: [] }))]);
+      const newest = (bl.items || [])[0], times = [ab && ab.last_ok, newest && newest.time].filter(Boolean).sort();
+      const last = times[times.length - 1];
+      const old = last && (Date.now() - new Date(last).getTime()) > 3 * 86400000;
+      rows.push(row(!last ? 'warn' : old || (ab && ab.error) ? 'warn' : 'ok', '本機備份', last ? `最近一份在 ${shortTime(last)}（${ago(last)}）${ab && ab.error ? `；自動備份失敗：${ab.error}` : ''}` : '還沒有任何備份',
+        h('button', { class: 'btn sm', type: 'button', onclick: async () => { try { await api('POST', '/api/backups'); toast('已建立備份'); S.settingsStatus && S.settingsStatus(); renderRoute(); } catch (e) { fail(e); } } }, '立即備份')));
+      if (ab) rows.push(!ab.folder ? row('', '第二份存放處', '沒有設定（備份只在這台電腦上）', h('button', { class: 'btn sm ghost', type: 'button', onclick: () => openGroup('資料', '匯出與備份') }, '去設定'))
+        : ab.second_error ? row('bad', '第二份存放處', `失敗：${ab.second_error}`, h('button', { class: 'btn sm ghost', type: 'button', onclick: () => openGroup('資料', '匯出與備份') }, '去看看'))
+        : row(ab.last_second_ok ? 'ok' : 'warn', '第二份存放處', ab.last_second_ok ? `最近一次成功：${shortTime(ab.last_second_ok)}（${ago(ab.last_second_ok)}）` : '已設定，還沒有成功複製過'));
+    } catch (e) { rows.push(row('warn', '本機備份', '讀不到備份資料')); }
+    const sh = S.st.sheets;
+    if (sh && !S.st.remote && !S.st.phone) {
+      const go = h('button', { class: 'btn sm ghost', type: 'button', onclick: () => openGroup('同步', 'Google') }, sh.has_credentials && sh.key ? '測試／同步' : '去設定');
+      const st = sh.status || {};
+      if (!sh.has_credentials || !sh.key) rows.push(row('', 'Google 試算表', `${sh.has_credentials ? '' : '尚未上傳金鑰'}${!sh.has_credentials && !sh.key ? '、' : ''}${sh.key ? '' : '尚未設定試算表'}（不使用也沒關係）`, go));
+      else if (st.state === 'error') rows.push(row('bad', 'Google 試算表', `同步失敗：${st.error || '原因不明'}${st.will_retry ? '（會自動重試）' : ''}`, go));
+      else if (st.state === 'offline') rows.push(row('warn', 'Google 試算表', '目前離線，連線後會自動補上', go));
+      else if (st.pending) rows.push(row('warn', 'Google 試算表', '有變動還沒上傳，會自動處理' + (sh.auto ? '' : '（自動同步是關閉的，要按「立即同步全部」）'), go));
+      else if (!sh.auto) rows.push(row('warn', 'Google 試算表', `自動同步是關閉的${st.last_ok ? `；上次同步 ${shortTime(st.last_ok)}` : ''}`, go));
+      else rows.push(row(st.last_ok ? 'ok' : 'warn', 'Google 試算表', st.last_ok ? `上次同步 ${shortTime(st.last_ok)}（${ago(st.last_ok)}），${st.rows} 筆` : '已設定，這次開啟後還沒同步過（有變動時會自動同步）', go));
+    }
+    const worst = rows.some((r) => r.classList.contains('bad')) ? 'bad' : rows.some((r) => r.classList.contains('warn')) ? 'warn' : 'ok';
+    box.querySelector('h2').after(h('span', { class: 'sp-badge ' + worst }, { ok: '一切正常', warn: '有地方要留意', bad: '需要處理' }[worst]));
+    box.querySelector('.sp-rows').replaceChildren(...rows);
+  })();
+  return box;
+}
+
 async function viewSettings(view) {
   const tmp = h('div');
   await settingsBody(tmp);
   const nodes = [...tmp.childNodes], head = nodes.shift();
-  view.append(head, ...groupSettings(nodes));
+  view.append(head, statusPanel(), ...groupSettings(nodes));
 }
 
 async function settingsBody(view) {

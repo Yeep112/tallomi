@@ -1188,3 +1188,135 @@ tr.vs td { display: block; width: 100%; }
   .ledger.tx .note { overflow-wrap: anywhere; }                     /* a long unbroken note (a link, a serial number) wraps instead of running past the edge */
   .tally-more > summary { display: flex; align-items: center; min-height: 36px; }
 }
+
+/* ---- 1.50.0 ---- */
+.info-btn { border: 0; background: transparent; color: var(--ink-3); font: 400 18px/1 var(--sans); width: 30px; height: 30px; border-radius: 50%; cursor: pointer; padding: 0; vertical-align: middle; margin-left: 2px; }
+.info-btn:hover, .info-btn.on { background: var(--hover); color: var(--ink); }
+.page-head .info-btn { align-self: center; }
+.sub.intro-note[hidden] { display: none; }
+.sub.intro-note { margin-top: 4px; }
+@media (max-width: 720px), (max-height: 500px) and (orientation: landscape) and (pointer: coarse) {
+  .fab { transition: transform .2s ease, opacity .2s ease; }
+  html.fab-away .fab { transform: translateY(96px) scale(.6); opacity: 0; pointer-events: none; }
+}
+@media (prefers-reduced-motion: reduce) { .fab { transition: none; } }
+.tile-bud.share { --bud: color-mix(in srgb, var(--ink-3) 70%, transparent); }
+.tile-bud.share small { color: var(--ink-3); }
+.kpis { display: grid; grid-template-columns: repeat(4, minmax(0, 1fr)); gap: 10px 14px; margin: 14px 0 4px; padding: 12px 14px; background: var(--surface); border: 1px solid var(--line); border-left: 3px solid var(--primary); border-radius: 8px; }
+.kpi { display: grid; gap: 2px; min-width: 0; align-content: start; }
+.kpi-label { font-size: 12.5px; color: var(--ink-3); }
+.kpi-val { font-size: 20px; font-weight: 600; line-height: 1.25; overflow-wrap: anywhere; }
+.kpi-val.neg { color: var(--expense); } .kpi-val.pos { color: var(--income); }
+.kpi-sub { font-size: 12px; color: var(--ink-3); line-height: 1.3; overflow-wrap: anywhere; }
+@media (max-width: 720px), (max-height: 500px) and (orientation: landscape) and (pointer: coarse) {
+  .kpis { grid-template-columns: repeat(2, minmax(0, 1fr)); padding: 10px 12px; }
+  .kpi-val { font-size: 18px; }
+}
+.seg.sm { margin-left: 10px; font-weight: 400; font-size: 13px; }
+.seg.sm button { padding: 5px 12px; }
+@media (max-width: 720px), (max-height: 500px) and (orientation: landscape) and (pointer: coarse) { .seg.sm button { min-height: 36px; } }
+/* exchange: bank comparison */
+.cmp-list { display: grid; gap: 6px; }
+.cmp-row { display: grid; grid-template-columns: minmax(0, 1.2fr) minmax(0, 1.3fr) auto auto; gap: 6px 12px; align-items: center; padding: 8px 10px; border: 1px solid var(--line-2); border-radius: 8px; background: var(--surface); }
+.cmp-row.on { border-color: var(--primary); box-shadow: inset 3px 0 0 var(--primary); }
+.cmp-row.best .cmp-out { color: var(--income); }
+.cmp-bank { display: grid; gap: 1px; min-width: 0; }
+.cmp-bank b { display: inline; }
+.cmp-badge { justify-self: start; font-size: 12px; padding: 1px 7px; border-radius: 10px; background: color-mix(in srgb, var(--income) 18%, transparent); color: var(--income); font-weight: 600; }
+.cmp-out { font-size: 17px; font-weight: 600; display: grid; gap: 1px; }
+.cmp-gap { font-size: 12px; font-weight: 400; color: var(--ink-3); }
+.cmp-now { font-size: 12.5px; color: var(--ink-3); white-space: nowrap; }
+.spark { display: inline-grid; gap: 1px; justify-items: end; }
+.spark.none { color: var(--ink-3); font-size: 12px; }
+.spark small { font-size: 12px; color: var(--ink-3); }
+.spark small.good { color: var(--income); } .spark small.bad { color: var(--expense); }
+.spark-svg { width: 96px; height: 28px; fill: none; stroke: var(--ink-3); stroke-width: 1.6; stroke-linejoin: round; stroke-linecap: round; }
+.spark-svg.good { stroke: var(--income); } .spark-svg.bad { stroke: var(--expense); }
+@media (max-width: 720px), (max-height: 500px) and (orientation: landscape) and (pointer: coarse) {
+  .cmp-row { grid-template-columns: minmax(0, 1fr) auto; }
+  .cmp-spark { grid-column: 1; } .cmp-row > .btn, .cmp-now { grid-column: 2; grid-row: 2; justify-self: end; }
+  .cmp-row > .btn { min-height: 36px; }
+  .cmp-spark .spark { justify-items: start; grid-auto-flow: column; gap: 10px; align-items: center; }
+}
+/* 1.51.0 — investment rows: tap / double tap / swipe */
+.tap2 { -webkit-user-select: none; user-select: none; }
+.tap2 input, .tap2 button { -webkit-user-select: auto; user-select: auto; }
+@media (max-width: 720px), (max-height: 500px) and (orientation: landscape) and (pointer: coarse) {
+  .ledger.inv-table tbody, .ledger.inv-hist tbody { overflow-x: clip; }
+  .ledger.inv-table tr.tap2, .ledger.inv-hist tr.tap2 { position: relative; touch-action: pan-y; }
+  .ledger.inv-table tr.swiping, .ledger.inv-hist tr.swiping { will-change: transform; }
+  .sw-bg.buy { left: auto; right: 100%; justify-content: flex-end; background: #B8322A; }
+  .sw-bg.sell { left: 100%; justify-content: flex-start; background: #1B7A4B; }
+}
+/* 1.51.0 — calendar: one month control (title opens the month picker) */
+.cal-nav { position: relative; }
+.cal-nav .cal-title { border: 0; background: transparent; font: 600 17px/1.2 var(--sans); color: var(--ink); min-width: 7em; padding: 8px 6px; cursor: pointer; border-radius: 6px; }
+.cal-nav .cal-title:hover { background: var(--hover); }
+.cal-top .cal-picker { position: absolute; left: 50%; top: 100%; width: 1px; height: 1px; padding: 0; border: 0; opacity: 0; pointer-events: none; }
+.cal-nav .btn:last-child { margin-left: 8px; font-size: 14px; }
+@media (max-width: 720px), (max-height: 500px) and (orientation: landscape) and (pointer: coarse) { .cal { touch-action: pan-y; } .cal-nav .cal-title { min-height: 40px; } .cal-nav { width: 100%; justify-content: space-between; } }
+/* 1.51.0 — backup & sync status */
+.status-panel .section-head { align-items: center; justify-content: flex-start; gap: 12px; }
+.sp-badge { font-size: 13px; padding: 2px 10px; border-radius: 12px; background: color-mix(in srgb, var(--income) 16%, transparent); color: var(--income); font-weight: 600; }
+.sp-badge.warn { background: color-mix(in srgb, #D69E2E 20%, transparent); color: #8A6410; } .sp-badge.bad { background: color-mix(in srgb, var(--expense) 16%, transparent); color: var(--expense); }
+.sp-rows { display: grid; gap: 8px; }
+.sp-row { display: grid; grid-template-columns: auto 1fr auto; gap: 10px; align-items: center; padding: 8px 12px; border: 1px solid var(--line-2); border-radius: 8px; background: var(--surface); }
+.sp-main { display: grid; gap: 1px; min-width: 0; } .sp-main span { font-size: 14px; color: var(--ink-2, var(--ink)); overflow-wrap: anywhere; }
+.sp-row.bad { border-color: color-mix(in srgb, var(--expense) 55%, transparent); } .sp-row.warn { border-color: color-mix(in srgb, #D69E2E 60%, transparent); }
+@media (max-width: 720px), (max-height: 500px) and (orientation: landscape) and (pointer: coarse) { .sp-acts .btn { min-height: 36px; } }
+/* 1.51.0 — the total split into 資產 / 現金流 / 負債 / 淨資產 */
+.wealth-parts { display: grid; grid-template-columns: repeat(4, minmax(0, auto)); gap: 4px 22px; margin-top: 8px; justify-content: start; }
+.wp-cell { display: grid; gap: 1px; min-width: 0; } .wp-cell b { font-size: 16px; font-weight: 600; }
+.wp-cell:last-child { padding-left: 18px; border-left: 1px solid var(--line-2); }
+@media (max-width: 720px), (max-height: 500px) and (orientation: landscape) and (pointer: coarse) {
+  .wealth-parts { grid-template-columns: repeat(2, minmax(0, 1fr)); gap: 8px 14px; }
+  .wp-cell:last-child { padding-left: 0; border-left: 0; } .wp-cell b { font-size: 17px; }
+}
+.worth.top { flex-wrap: wrap; }
+.worth.top .wealth-parts { flex: 1 1 100%; order: 9; margin-top: 2px; padding-top: 8px; border-top: 1px solid var(--line-2); }
+@media (max-width: 720px), (max-height: 500px) and (orientation: landscape) and (pointer: coarse) { .worth.top .wealth-parts { grid-column: 1 / -1; order: 0; } .worth.top .w-total { order: -1; } }
+/* 1.52.0 */
+.acc-group .section-head { align-items: baseline; }
+.acc-sub { font-size: 17px; font-weight: 600; } .acc-sub small { margin-left: 4px; }
+/* investment cards: icon buttons, warning dot, folded cleared stocks */
+.inv-act .ic { display: none; }
+.gap-dot { border: 0; background: transparent; color: #B7791F; font-size: 15px; line-height: 1; cursor: pointer; padding: 2px 5px; margin-left: 4px; border-radius: 50%; vertical-align: middle; }
+.gap-dot.on, .gap-dot:hover { background: color-mix(in srgb, #D69E2E 22%, transparent); }
+.inv-cleared-head td { padding: 6px 2px; } .inv-cleared-head .btn { max-width: 100%; text-align: left; white-space: normal; }
+.w-chev { display: none; }
+@media (max-width: 720px), (max-height: 500px) and (orientation: landscape) and (pointer: coarse) {
+  .inv-act .tx { display: none; } .inv-act .ic { display: inline; font-size: 18px; line-height: 1; }
+  .inv-act .btn { min-width: 48px; min-height: 40px; }
+  .inv-act { gap: 10px; }
+  .worth.top .w-total { cursor: pointer; } .w-chev { display: inline-block; margin-left: 6px; transition: transform .15s; } .w-total[aria-expanded="true"] .w-chev { transform: rotate(180deg); }
+  .worth.top .wealth-parts { display: flex; overflow-x: auto; scroll-snap-type: x proximity; gap: 20px; padding: 8px 0 2px; -webkit-overflow-scrolling: touch; scrollbar-width: none; }
+  .worth.top .wealth-parts::-webkit-scrollbar { display: none; }
+  .worth.top .wealth-parts .wp-cell { flex: none; scroll-snap-align: start; } .worth.top .wealth-parts .wp-cell:last-child { padding-left: 16px; border-left: 1px solid var(--line-2); }
+  .worth.top .wealth-parts.open { display: grid; grid-template-columns: repeat(2, minmax(0, 1fr)); overflow: visible; gap: 8px 14px; }
+  .worth.top .wealth-parts.open .wp-cell:last-child { padding-left: 0; border-left: 0; }
+}
+
+/* 1.53.0 — a phone sheet shows a small grab bar and can be pulled down to leave (see swipeDownClose) */
+@media (max-width: 720px), (max-height: 500px) and (orientation: landscape) and (pointer: coarse) {
+  dialog[open] > form > .dlg-head { position: relative; padding-top: 22px; touch-action: none; }
+  dialog[open] > form > .dlg-head::before { content: ''; position: absolute; top: 8px; left: 50%; width: 38px; height: 4px; margin-left: -19px; border-radius: 2px; background: var(--line, #c9d0dc); opacity: .9; }
+  html.kb-open dialog[open] > form > .dlg-head::before { display: none; }
+  dialog[open] { will-change: transform; }
+}
+
+/* 1.53.0 — a page slides in from the side it was swiped from */
+@keyframes pg-l { from { transform: translateX(28px); opacity: .2; } to { transform: none; opacity: 1; } }
+@keyframes pg-r { from { transform: translateX(-28px); opacity: .2; } to { transform: none; opacity: 1; } }
+#view.slide-l { animation: pg-l .22s ease-out; }
+#view.slide-r { animation: pg-r .22s ease-out; }
+@media (prefers-reduced-motion: reduce) { #view.slide-l, #view.slide-r { animation: none; } }
+@media (max-width: 720px), (max-height: 500px) and (orientation: landscape) and (pointer: coarse) {
+  #view { touch-action: pan-y pinch-zoom; }          /* a sideways slide reaches the page-swipe instead of being taken by the browser */
+}
+/* 1.54.0 — the name of the page just swiped to */
+.page-pill { position: fixed; top: calc(10px + env(safe-area-inset-top)); left: 50%; transform: translateX(-50%); z-index: 60; padding: 6px 16px; border-radius: 999px; background: rgba(20, 28, 44, .88); color: #fff; font-size: 14px; font-weight: 500; pointer-events: none; animation: pill-in .16s ease-out; transition: opacity .3s; }
+.page-pill.out { opacity: 0; }
+@keyframes pill-in { from { opacity: 0; transform: translateX(-50%) translateY(-8px); } to { opacity: 1; transform: translateX(-50%); } }
+/* 1.56.0 — while dragging, the hint names the page that will open; it turns solid once letting go will switch */
+.page-pill.hint { opacity: .6; animation: none; transition: opacity .12s, background .12s; }
+.page-pill.hint.armed { opacity: 1; background: var(--accent, #1f3a6b); }

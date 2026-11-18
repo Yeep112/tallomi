@@ -121,8 +121,9 @@ async function viewAdvances(view) {
   const items = d.items.filter((x) => !kindF || x.advance === kindF);
   const bills = kindF === 'claim' ? [] : (d.bills || []);                  // split bills are always paid-for-friends
   const money1 = (list) => list.map((r) => `${num(r.amount, r.currency)} ${r.currency}`).join('、');
-  view.append(h('div', { class: 'page-head' }, h('div', null, h('h1', null, '代墊與報帳', eyeButton('advances')),
-    h('p', { class: 'sub' }, '幫朋友先付錢，或自己先墊、之後要報帳的花費，記在這裡追蹤。一桌人一起吃飯由你先付，按「分帳」一次記下每個人的份；對方還錢時按「收款」，選轉進哪個帳戶。報帳可以設預計收到款項的日期，到那天自動記成已收款。逾期會在這裡、總覽和左邊選單提醒。')),
+  const intro = pageIntro('幫朋友先付錢，或自己先墊、之後要報帳的花費，記在這裡追蹤。一桌人一起吃飯由你先付，按「分帳」一次記下每個人的份；對方還錢時按「收款」，選轉進哪個帳戶。報帳可以設預計收到款項的日期，到那天自動記成已收款。逾期會在這裡、總覽和左邊選單提醒。');
+  view.append(h('div', { class: 'page-head' }, h('div', null, h('h1', null, '代墊與報帳', eyeButton('advances'), intro.btn),
+    intro.p),
     h('div', { class: 'page-actions' }, h('button', { class: 'btn primary', type: 'button', onclick: () => openBillDialog({}) }, '＋ 分帳'))));
   if (tab === 'open') {
     const parties = d.by_party.filter((g) => !kindF || g.advance === kindF);

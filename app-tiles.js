@@ -115,9 +115,17 @@ function tileBudget(name, kind, spent, base) {
       h('span', { class: 'tile-bar-track', 'aria-hidden': 'true' }, h('i', { style: `width:${Math.min(100, pct)}%` })),
       h('small', { class: 'num' }, `預算 ${num(cap, base)}`, h('em', null, ` · ${text}`))) };
 }
-function categoryTile(name, amount, kind, editing, base, spent) {
-  const l = catLook(name), pic = isPicture(l.icon), bud = tileBudget(name, kind, spent, base);
-  return h('button', { type: 'button', class: 'tile' + (editing ? ' editing' : '') + (bud ? ' has-bud ' + bud.tone : ''), style: pic ? '' : `--tile:${l.color}`, 'data-name': name,
+// A tile without a budget shows its share of the month's total instead: a thin bar and "占 23%".
+function tileShare(amount, total, kind) {
+  const a = Number(amount) || 0, t = Number(total) || 0;
+  if (!(a > 0) || !(t > 0)) return null;
+  const pct = a / t * 100, txt = pct < 1 ? '占 <1%' : `占 ${Math.round(pct)}%`;
+  return { label: `${TYPE_LABEL[kind]}占本月 ${pct < 1 ? '不到 1' : Math.round(pct)}%`,
+    el: h('span', { class: 'tile-bud share' }, h('span', { class: 'tile-bar-track', 'aria-hidden': 'true' }, h('i', { style: `width:${Math.max(3, Math.min(100, pct))}%` })), h('small', { class: 'num' }, txt)) };
+}
+function categoryTile(name, amount, kind, editing, base, spent, total) {
+  const l = catLook(name), pic = isPicture(l.icon), bud = tileBudget(name, kind, spent, base) || tileShare(amount, total, kind);
+  return h('button', { type: 'button', class: 'tile' + (editing ? ' editing' : '') + (bud && bud.tone ? ' has-bud ' + bud.tone : bud ? ' has-share' : ''), style: pic ? '' : `--tile:${l.color}`, 'data-name': name,
     'aria-label': editing ? `編輯類別「${name}」` : `${TYPE_LABEL[kind]}・${name}，本月 ${num(amount, base)}${bud ? '，' + bud.label : ''}，點一下記一筆`,
     onclick: () => {
       if (Date.now() - (S.tileDragAt || 0) < 400) return;                    // the click that ends a drag
@@ -167,7 +175,7 @@ async function overviewTiles() {
         h('span', null, `${TYPE_LABEL[kind]} `, h('b', { class: 'num ' + (kind === 'income' ? 'pos' : 'neg') }, num(g.total, base)), h('small', { class: 'muted' }, ` ${base}`)),
         h('span', { class: 'tile-chev', 'aria-hidden': 'true' }, shut ? '▸' : '▾')),
       shut ? null : h('div', { class: 'tile-grid', 'data-kind': kind },
-        tileOrder(names, info.usage, kind, (S.st.prefs.tile_order || {})[kind] || []).map((c) => categoryTile(c, by[c] || 0, kind, o.edit, base, (d.budget_spent || {})[c] || 0)),
+        tileOrder(names, info.usage, kind, (S.st.prefs.tile_order || {})[kind] || []).map((c) => categoryTile(c, by[c] || 0, kind, o.edit, base, (d.budget_spent || {})[c] || 0, g.total)),
         h('button', { type: 'button', class: 'tile add', 'aria-label': `新增${TYPE_LABEL[kind]}類別`, onclick: () => addCategoryDialog(kind) }, h('span', { class: 'tile-plus', 'aria-hidden': 'true' }, '＋'), h('span', { class: 'tile-name' }, '新增類別'))));
   };
   const root = h('div', { class: 'tiles' },

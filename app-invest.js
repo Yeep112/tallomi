@@ -52,6 +52,7 @@ async function viewInvest(view) {
   const base = S.st.base;
   const inv = (S.inv = S.inv || { f: { side: 'buy', acct: null, unit: 'lot', qty: '', price: '', priceTouched: false, fee: '', feeTouched: false, tax: '', taxTouched: false,
     pay: null, acctAmt: '', acctTouched: false, payAmt: '', payTouched: false, time: '', note: '' }, open: {} });
+  inv.gap = inv.gap || {};
   const f = inv.f;
   let board = (S.invBoard = await api('GET', '/api/invest'));
   S.invAuto = await api('GET', '/api/invest/auto'); S.invAutoAt = Date.now();
@@ -113,6 +114,9 @@ async function viewInvest(view) {
         h('button', { class: 'btn sm ghost', type: 'button', onclick: async () => { try { await api('PUT', '/api/invest/price', { symbol: p.symbol, price: String(pend.price), source: 'web' }); S.invResult.pending = S.invResult.pending.filter((x) => x !== pend); await repaint(); } catch (err) { fail(err); } } }, '改用')) : null);
   };
 
+  // On a phone these four buttons are small icons (the rows can also be tapped and swiped); on a computer they keep their words.
+  const actBtn = (cls, icon, label, fn, off, expanded) => h('button', { class: `btn sm ${cls}`.trim(), type: 'button', disabled: !!off, 'aria-label': label, title: label, 'aria-expanded': expanded == null ? null : expanded, onclick: fn },
+    h('span', { class: 'ic', 'aria-hidden': 'true' }, icon), h('span', { class: 'tx' }, label));
   const paintTop = () => {
     const t = board.totals, held = board.positions.filter((p) => p.shares > 0 || p.realized !== 0);
     const gain = t.pnl;
@@ -127,10 +131,10 @@ async function viewInvest(view) {
     kids.push(h('p', { class: 'hint inv-note' }, `損益試算是用現價推算的預估值，帳戶餘額與總資產只算「付出成本」。賣出、把錢轉回銀行帳戶之後，實際賺賠才會列入實際資產（已實現損益）。紅色代表賺、綠色代表賠。`,
       '　庫存市值與損益已扣掉預估的賣出手續費和證交稅，數字和券商 App 一致。'));
     if (t.missing_prices) kids.push(h('div', { class: 'banner' }, h('span', null, `有 ${t.missing_prices} 檔還沒有股價（或缺少換算匯率），沒有算進市值。請在下表輸入現價，或到設定頁填匯率。`)));
-    const rows = board.positions.map((p) => {
+    const posRows = (p) => {
       const open = !!inv.open[p.account_id];
       const gap = Math.abs(p.balance_gap) >= 0.005;
-      const tr = h('tr', { class: p.shares > 0 ? '' : 'archived' },
+      const tr = h('tr', { class: (p.shares > 0 ? '' : 'archived') + ' tap2', title: '點一下買進或賣出；點兩下看走勢；手機向右滑買進、向左滑賣出', ...rowTapDouble(() => pick('buy', p), () => trend(p)) },
         h('td', { class: 'name' }, h('div', null, p.name || p.symbol), h('div', { class: 'hint' }, `${p.symbol}　帳戶 ${p.account}${p.currency !== p.quote_currency ? `（${p.currency}，股價 ${p.quote_currency}）` : ''}`)),
         h('td', { class: 'r' }, invCount(p.shares), p.shares >= 1000 && p.market === 'TW' ? h('div', { class: 'hint' }, isHidden() ? '' : `${+(p.shares / 1000).toFixed(3)} 張`) : null),
         h('td', { class: 'r' }, p.shares > 0 ? money(p.cost, p.currency, { tag: false }) : '—', p.avg_cost ? h('div', { class: 'hint' }, isHidden() ? '' : `均價 ${invPrice(p.avg_cost)}`) : null),
@@ -138,11 +142,12 @@ async function viewInvest(view) {
         h('td', { class: 'r' }, p.shares > 0 ? (p.value == null ? '—' : money(p.value, p.currency, { tag: false })) : '—'),
         h('td', { class: 'r' }, p.shares > 0 && p.pnl != null ? h('span', { class: 'num tw' + twTone(p.pnl) }, num(p.pnl, p.currency, true)) : '—'),
         h('td', { class: 'r' }, p.shares > 0 && p.ret != null ? h('span', { class: 'num tw' + twTone(p.pnl) }, invPct(p.ret)) : '—'),
-        h('td', { class: 'act' },
-          p.market === 'TW' ? h('button', { class: 'btn sm ghost', type: 'button', onclick: () => openStockDetail({ code: p.symbol, name: p.name, market: 'TWSE' }, mineCtx) }, '走勢') : null,
-          h('button', { class: 'btn sm', type: 'button', onclick: () => pick('buy', p) }, '買進'),
-          h('button', { class: 'btn sm', type: 'button', disabled: p.shares <= 0, onclick: () => pick('sell', p) }, '賣出'),
-          p.lots.length ? h('button', { class: 'btn sm ghost', type: 'button', 'aria-expanded': String(open), onclick: () => { inv.open[p.account_id] = !open; paintTop(); } }, open ? '收合' : '明細') : null));
+        h('td', { class: 'act inv-act' },
+          p.market === 'TW' ? actBtn('ghost', '📈', '走勢', () => openStockDetail({ code: p.symbol, name: p.name, market: 'TWSE' }, mineCtx)) : null,
+          actBtn('', '＋', '買進', () => pick('buy', p)),
+          actBtn('', '－', '賣出', () => pick('sell', p), p.shares <= 0),
+          p.lots.length ? actBtn('ghost', open ? '▴' : '▾', open ? '收合' : '明細', () => { inv.open[p.account_id] = !open; paintTop(); }, false, String(open)) : null));
+      swipeTrade(tr, p);
       const extra = [];
       if (open) extra.push(h('tr', { class: 'inv-lots' }, h('td', { colspan: 8 },
         h('table', { class: 'ledger stack inv-lot-table' },
@@ -152,11 +157,23 @@ async function viewInvest(view) {
             h('td', { class: 'r', 'data-label': '損益試算' }, l.pnl == null ? '—' : h('span', { class: 'num tw' + twTone(l.pnl) }, num(l.pnl, p.currency, true))),
             h('td', { class: 'r', 'data-label': '報酬率' }, l.ret == null ? '—' : h('span', { class: 'tw' + twTone(l.pnl) }, invPct(l.ret))))))),
         h('p', { class: 'hint' }, p.gross_value != null && p.shares > 0 ? `未扣費用的市價總值 ${num(p.gross_value, p.currency)} ${p.currency}。` : '', `已實現損益 ${num(p.realized, p.currency, true)} ${p.currency}。`))));
-      if (gap && (p.shares > 0 || p.balance !== 0)) extra.push(h('tr', null, h('td', { colspan: 8, class: 'hint inv-gap' },
+      const hasGap = gap && (p.shares > 0 || p.balance !== 0);
+      if (hasGap) tr.querySelector('td.name > div').append(h('button', { class: 'gap-dot' + (inv.gap[p.account_id] ? ' on' : ''), type: 'button', 'aria-label': '帳戶餘額與持股成本不一致，點一下看說明', title: '帳戶餘額與持股成本不一致',
+        onclick: () => { inv.gap[p.account_id] = !inv.gap[p.account_id]; paintTop(); } }, '⚠'));
+      if (hasGap && inv.gap[p.account_id]) extra.push(h('tr', null, h('td', { colspan: 8, class: 'hint inv-gap' },
         `「${p.account}」帳戶餘額 ${num(p.balance, p.currency)} 與持股成本 ${num(p.cost, p.currency)} 差 ${num(p.balance_gap, p.currency, true)} ${p.currency}：` +
         (p.balance_gap < 0 ? '帳戶裡的錢比持股成本少，可能是原本的持股沒有透過買進紀錄登錄金額。' : '帳戶餘額比持股成本多，可能有尚未登錄的買進紀錄。') + '實際資產以帳戶餘額為準。')));
       return [tr, ...extra];
-    });
+    };
+    // Stocks with no shares left (nothing but dashes) sit in one folded line; a stock that was just added to buy is one tap away.
+    const live = board.positions.filter((p) => p.shares > 0), cleared = board.positions.filter((p) => !(p.shares > 0));
+    const rows = live.flatMap(posRows);
+    if (cleared.length) {
+      const openE = !!inv.showCleared || !live.length;
+      rows.push(h('tr', { class: 'inv-cleared-head' }, h('td', { colspan: 8 }, h('button', { class: 'btn sm ghost', type: 'button', 'aria-expanded': String(openE),
+        onclick: () => { inv.showCleared = !openE; paintTop(); } }, `${openE ? '▾' : '▸'} 已清空的標的（${cleared.length}）：${cleared.map((p) => p.name || p.symbol).join('、')}`))));
+      if (openE) rows.push(...cleared.flatMap(posRows));
+    }
     kids.push(h('section', { class: 'section' },
       h('div', { class: 'section-head' }, h('h2', null, '庫存'), h('div', { class: 'row-inline' }, statusBox,
         h('button', { class: 'btn sm primary', type: 'button', onclick: () => openTrade() }, '買進／賣出'),
@@ -323,6 +340,15 @@ async function viewInvest(view) {
     tradeDlg = openDialog({ title: '買進／賣出股票', body: formBox, wide: true });
     const q = formBox.querySelector('[name=qty]'); if (q) q.focus();
   }
+  // Two quick taps: the price chart (only the Taiwan market has one). Phone: swipe a row right to buy, left to sell.
+  function trend(p) {
+    if (p.market === 'TW') openStockDetail({ code: p.symbol, name: p.name, market: 'TWSE' }, mineCtx);
+    else toast('這檔股票沒有走勢圖');
+  }
+  function swipeTrade(tr, p) {
+    if (isPhone() && onTouch() && typeof enableSwipe === 'function')
+      enableSwipe(tr, { onRight: () => pick('buy', p), onLeft: p.shares > 0 ? () => pick('sell', p) : null, leftLabel: '賣出', rightLabel: '買進', leftCls: 'sell', rightCls: 'buy' });
+  }
   function pick(side, p) {
     f.side = side; f.acct = p.account_id; f.price = ''; f.priceTouched = false; f.qty = '';
     f.feeTouched = f.taxTouched = f.acctTouched = f.payTouched = false; f.unit = p.market === 'TW' ? f.unit : 'odd';
@@ -350,7 +376,9 @@ async function viewInvest(view) {
   const paintHist = () => {
     const have = new Set(board.trades.map((t) => t.id));
     inv.sel = new Set([...inv.sel].filter((id) => have.has(id)));
-    const rows = board.trades.map((t) => h('tr', { class: 'tx-row' + (inv.sel.has(t.id) ? ' picked' : ''), tabindex: '0', title: '點一下編輯這筆', ...rowTap(() => editTrade(t)) },
+    const rows = board.trades.map((t) => { const p = board.positions.find((x) => x.symbol === t.symbol);
+      const again = () => (p ? pick(t.side === 'sell' && p.shares <= 0 ? 'buy' : t.side, p) : editTrade(t));
+      const tr = h('tr', { class: 'tx-row tap2' + (inv.sel.has(t.id) ? ' picked' : ''), tabindex: '0', title: '點一下照這筆的方向買進／賣出這檔；點兩下看走勢；要修改請按「編輯」', ...rowTapDouble(again, () => (p ? trend(p) : editTrade(t))) },
       h('td', { class: 'c-sel' }, h('input', { type: 'checkbox', checked: inv.sel.has(t.id), 'aria-label': `選取 ${shortTime(t.time)} ${t.name || t.symbol}`,
         onchange: (e) => { if (e.target.checked) inv.sel.add(t.id); else inv.sel.delete(t.id); e.target.closest('tr').classList.toggle('picked', e.target.checked); paintHistBar(); } })),
       h('td', { class: 'when' }, shortTime(t.time)),
@@ -363,7 +391,9 @@ async function viewInvest(view) {
       h('td', { class: 'act' }, h('button', { class: 'btn sm ghost', type: 'button', onclick: () => editTrade(t) }, '編輯'), h('button', { class: 'btn sm ghost', type: 'button', onclick: async () => {
         if (!await confirmBox({ title: '刪除這筆買賣紀錄？', message: `${t.side === 'buy' ? '買進' : '賣出'} ${t.name || t.symbol} ${t.shares} 股 @${t.price}。${t.moved_money ? '當時轉出／轉入的錢也會一起還原。' : ''}`, confirmLabel: '刪除', danger: true })) return;
         try { const r = await api('DELETE', `/api/invest/trades/${t.id}`); await afterChange('已刪除買賣紀錄', undoAction(r.undo)); } catch (err) { fail(err); }
-      } }, '刪除'))));
+      } }, '刪除')));
+      if (p) swipeTrade(tr, p);
+      return tr; });
     histBox.replaceChildren(h('div', { class: 'section-head' }, h('h2', null, '買賣紀錄')), histBar,
       rows.length ? h('div', { class: 'tablewrap' }, h('table', { class: 'ledger stack inv-hist' },
         h('thead', null, h('tr', null, h('th', { class: 'c-sel' }, ''), ['時間', '', '股票'].map((x) => h('th', null, x)), h('th', { class: 'r' }, '股數'), h('th', { class: 'r' }, '成交價'), h('th', { class: 'r' }, '金額（計入股票帳戶）'), h('th', null, '對方帳戶'), h('th', { class: 'r' }, '實現損益'), h('th', null, ''))),
@@ -450,9 +480,9 @@ async function viewInvest(view) {
       h('button', { type: 'button', 'aria-pressed': String(t === 'market'), onclick: () => setTab('market') }, '其他股票・ETF（尚未建立帳戶）'));
     if (t === 'market' && !marketBuilt) { marketBuilt = true; buildMarketTab(marketBox, marketCtx); }
   };
+  const intro = pageIntro('「我的持股」是已經建立帳戶的股票：買進是從你選的帳戶把錢轉進股票帳戶（付出成本），賣出是把成本轉出、實收轉進你選的帳戶，損益只是預估。「其他股票・ETF」列出全部上市櫃股票，可以先看走勢，再決定要不要建立帳戶。');
   view.append(
-    h('div', { class: 'page-head' }, h('div', null, h('h1', null, '投資', eyeButton('invest')),
-      h('p', { class: 'sub' }, '「我的持股」是已經建立帳戶的股票：買進是從你選的帳戶把錢轉進股票帳戶（付出成本），賣出是把成本轉出、實收轉進你選的帳戶，損益只是預估。「其他股票・ETF」列出全部上市櫃股票，可以先看走勢，再決定要不要建立帳戶。'))),
+    h('div', { class: 'page-head' }, h('div', null, h('h1', null, '投資', eyeButton('invest'), intro.btn), intro.p)),
     h('div', { class: 'inv-tabbar' }, tabBar),
     mineBox, marketBox);
   paintTop(); paintForm(); paintHist();

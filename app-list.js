@@ -123,7 +123,7 @@ function virtualBody(tbody, entries, makeRow, { cols = 1, estimate = { day: 44, 
 // Touch only (a mouse has the buttons and the keyboard has the editor). Vertical scrolling stays the browser's own: the row asks for
 // `touch-action: pan-y`, so a mostly-vertical move never reaches us. A swipe has to travel a clear distance before it counts.
 const SWIPE_AT = 92;                                         // px the row must travel before letting go does something
-function enableSwipe(tr, { onLeft, onRight, leftLabel = '刪除', rightLabel = '再記一筆' }) {
+function enableSwipe(tr, { onLeft, onRight, leftLabel = '刪除', rightLabel = '再記一筆', leftCls = 'del', rightCls = 'copy' }) {
   tr.classList.add('swipeable');
   let st = null, bg = null, reset = 0;
   const finish = (dx, act) => {
@@ -156,7 +156,7 @@ function enableSwipe(tr, { onLeft, onRight, leftLabel = '刪除', rightLabel = '
     st.dx = Math.sign(dx) * shown;
     tr.style.transform = `translateX(${st.dx}px)`;
     const left = dx < 0, armed = shown >= SWIPE_AT;
-    bg.className = `sw-bg ${left ? 'del' : 'copy'}${armed ? ' armed' : ''}`;
+    bg.className = `sw-bg ${left ? leftCls : rightCls}${armed ? ' armed' : ''}`;
     bg.style.width = `${shown}px`;
     bg.textContent = armed ? (left ? `放開${leftLabel}` : `放開${rightLabel}`) : (left ? leftLabel : rightLabel);
   });

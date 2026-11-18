@@ -26,8 +26,8 @@ const money0 = (v, base) => `${num(v, base)} ${base}`;
 
 async function viewTags(view) {
   const tags = S.st.tag_list || [];
-  view.append(h('div', { class: 'page-head' }, h('div', null, h('h1', null, '標籤', eyeButton('tags')),
-    h('p', { class: 'sub' }, '標籤可以跨類別，例如「日本旅行」。選一個標籤，看這一趟（或這個專案）總共花多少、哪天花最多、錢花在哪些類別。'))));
+  const intro = pageIntro('標籤可以跨類別，例如「日本旅行」。選一個標籤，看這一趟（或這個專案）總共花多少、哪天花最多、錢花在哪些類別。');
+  view.append(h('div', { class: 'page-head' }, h('div', null, h('h1', null, '標籤', eyeButton('tags'), intro.btn), intro.p)));
   if (!tags.length) {
     view.append(h('div', { class: 'empty' }, h('b', null, '還沒有標籤'), '記帳或編輯交易時，在「標籤」欄輸入，例如 日本旅行。也可以在「交易」頁按「選取多筆」，一次替很多筆加上標籤。'));
     return;
@@ -76,22 +76,32 @@ function paintTag(d) {
       S.st.remote ? null : h('button', { class: 'btn', type: 'button', onclick: async () => {
         try { await exported(await api('POST', '/api/export/tag', { tag: d.tag })); } catch (e) { fail(e); }
       } }, '匯出 CSV（給報帳）')),
-    h('div', { class: 'chart-box', style: 'margin-top:14px' }, h('h2', null, d.bucket === 'month' ? '每月支出與累計' : '每日支出與累計'),
+    h('div', { class: 'chart-box', style: 'margin-top:14px' }, h('h2', null, d.bucket === 'month' ? '每月支出與累計' : '每日支出與累計',
+      h('span', { class: 'seg sm', role: 'group', 'aria-label': '圖的內容', id: 'tag-mode' }, TAG_TREND_MODES.map(([k, l]) => h('button', { type: 'button', 'data-mode': k, 'aria-pressed': String(tagTrendMode() === k),
+        onclick: () => { lsSet('pw_tag_trend', k); document.querySelectorAll('#tag-mode button').forEach((b) => b.setAttribute('aria-pressed', String(b.dataset.mode === k))); const box = document.querySelector('#tag-trend').closest('.chart-box'); drawTagTrend(box, d); } }, l)))),
       h('div', { class: 'chart-wrap tall' }, h('canvas', { id: 'tag-trend', role: 'img', 'aria-label': `標籤 ${d.tag} 的支出趨勢` }))),
     h('div', { class: 'charts', id: 'tag-cats' }));
 }
 
+// One scale for the whole chart (the old two-sided version drew the same money on two different axes). Default: the running total only; the bars for each day are one tap away.
+const TAG_TREND_MODES = [['cum', '累計'], ['day', '每天'], ['both', '兩者']];
+const tagTrendMode = () => { const m = lsGet('pw_tag_trend'); return TAG_TREND_MODES.some(([k]) => k === m) ? m : 'cum'; };
+function drawTagTrend(box, d) {
+  const base = d.base, mode = tagTrendMode(), cv = $('#tag-trend', box);
+  if (box._trend) { box._trend.destroy(); S.charts = S.charts.filter((c) => c !== box._trend); box._trend = null; }
+  if (!d.labels.length || typeof Chart === 'undefined') return;
+  const short = (l) => (d.bucket === 'month' ? l : l.slice(5));
+  const sets = [];
+  if (mode !== 'cum') sets.push({ type: 'bar', label: d.bucket === 'month' ? '當月支出' : '當天支出', data: d.daily_expense, backgroundColor: css('--expense'), borderRadius: 3, order: 2 });
+  if (mode !== 'day') sets.push({ type: 'line', label: '累計支出', data: d.cumulative_expense, borderColor: css('--brass'), backgroundColor: mode === 'cum' ? css('--brass') + '33' : css('--brass'), fill: mode === 'cum', tension: .2, pointRadius: d.labels.length > 40 ? 0 : 2.5, order: 1 });
+  box._trend = mkChart(cv, { data: { labels: d.labels.map(short), datasets: sets },
+    options: { maintainAspectRatio: false, interaction: { mode: 'index', intersect: false },
+      scales: { x: { ticks: { maxTicksLimit: 14 } }, y: yAxis() },
+      plugins: { legend: { display: sets.length > 1 }, tooltip: { callbacks: { label: (c) => ` ${c.dataset.label}：${num(c.parsed.y, base)} ${base}` } } } } });
+}
 function drawTagCharts(box, d) {
   const base = d.base;
-  if (d.labels.length && typeof Chart !== 'undefined') {
-    const short = (l) => (d.bucket === 'month' ? l : l.slice(5));
-    mkChart($('#tag-trend', box), { data: { labels: d.labels.map(short), datasets: [
-      { type: 'bar', label: '當天支出', data: d.daily_expense, backgroundColor: css('--expense'), borderRadius: 3, yAxisID: 'y', order: 2 },
-      { type: 'line', label: '累計支出', data: d.cumulative_expense, borderColor: css('--brass'), backgroundColor: css('--brass'), tension: .2, pointRadius: d.labels.length > 40 ? 0 : 2.5, yAxisID: 'y1', order: 1 }] },
-      options: { maintainAspectRatio: false, interaction: { mode: 'index', intersect: false },
-        scales: { x: { ticks: { maxTicksLimit: 14 } }, y: yAxis(), y1: { position: 'right', beginAtZero: true, grid: { drawOnChartArea: false }, ticks: { callback: (v) => (isHidden() ? '' : v) } } },
-        plugins: { tooltip: { callbacks: { label: (c) => ` ${c.dataset.label}：${num(c.parsed.y, base)} ${base}` } } } } });
-  }
+  drawTagTrend($('#tag-trend', box).closest('.chart-box'), d);
   const roll = (arr) => {                                    // at most 8 slices: the rest becomes 其他
     const head = arr.slice(0, 7), tail = arr.slice(7);
     const items = tail.length > 1 ? [...head, { label: '其他', total: tail.reduce((s, g) => s + g.total, 0), count: tail.reduce((s, g) => s + g.count, 0) }] : arr;

@@ -8,6 +8,18 @@ const roundTo = (v, d) => { const f = 10 ** d; return Math.round((v + Number.EPS
 const exBankOf = (name) => { const low = String(name || '').toLowerCase(); return Object.keys(S.st.banks || {}).find((k) => low.startsWith(k.toLowerCase())) || null; };
 const exDigits = (ccy) => (ccy === S.st.base ? 0 : digits(ccy));          // the bank credits whole units of the base currency
 
+// A tiny line of the last days' rates (no axes: just the shape, and the change from the first to the last point).
+function exSpark(points, goodWhenUp) {
+  if (!points || points.length < 2) return h('span', { class: 'spark none' }, '沒有走勢');
+  const W = 96, H = 28, ys = points.map((p) => p.rate), lo = Math.min(...ys), hi = Math.max(...ys), span = hi - lo || 1;
+  const pts = points.map((p, i) => `${(i / (points.length - 1) * W).toFixed(1)},${(H - 3 - (p.rate - lo) / span * (H - 6)).toFixed(1)}`).join(' ');
+  const ch = ys[ys.length - 1] - ys[0], tone = ch === 0 ? '' : (ch > 0) === goodWhenUp ? 'good' : 'bad';
+  const el = document.createElementNS(SVG_NS, 'svg');
+  el.setAttribute('viewBox', `0 0 ${W} ${H}`); el.setAttribute('class', 'spark-svg ' + tone); el.setAttribute('aria-hidden', 'true');
+  const pl = document.createElementNS(SVG_NS, 'polyline'); pl.setAttribute('points', pts); el.append(pl);
+  return h('span', { class: 'spark' }, el, h('small', { class: 'num ' + tone }, `${ch > 0 ? '▲' : ch < 0 ? '▼' : '＝'} ${fmtRate(Math.abs(ch))}`));
+}
+
 // ---- reading the banks' own pages -------------------------------------------------------------
 function exPaint() {
   const box = S.exStatusEl;
@@ -72,6 +84,7 @@ async function exAutoFetch(ccy, force) {
 
 async function viewExchange(view) {
   const base = S.st.base, banks = S.st.banks || {}, bankKeys = S.st.bank_order || Object.keys(banks);
+  S.exCmp = null;
   const ex = (S.ex = S.ex || { dir: 'buy', amount: '', toAmount: '', toEdited: false, rate: '', rateTouched: false, time: '', note: '', range: 7,
     bank: bankKeys[0], ccy: null, baseAcct: null, forAcct: null });
   const foreign = S.st.currencies.filter((c) => c !== base);
@@ -121,12 +134,13 @@ async function viewExchange(view) {
         h('button', { class: 'btn sm primary', type: 'button', onclick: () => { ex.rate = nq.text; ex.rateTouched = false; ex.toEdited = false; ex.toAmount = ''; ex.dismissed = null; renderRoute(); } }, '套用'),
         h('button', { class: 'btn sm', type: 'button', onclick: () => { ex.dismissed = nq.text; paintAsk(); } }, '先不要')));
   };
-  S.exRefresh = async () => { board = await api('GET', '/api/fx/board?currency=' + encodeURIComponent(ex.ccy)); paintAsk(); exPaint(); };
+  S.exRefresh = async () => { board = await api('GET', '/api/fx/board?currency=' + encodeURIComponent(ex.ccy)); paintAsk(); exPaint(); if (S.exCmp) S.exCmp(); };
   const effLine = h('div', { class: 'hint' });
   const fromAcct = () => acct(fromId());
 
   function sync(fromToBox) {
     if (!ex.toEdited && !fromToBox) { ex.toAmount = calc(); toIn.value = ex.toAmount; }
+    if (S.exCmp) S.exCmp();
     const a = parseNum(ex.amount), t = parseNum(ex.toAmount), r = parseNum(ex.rate);
     // The rate the bank really applied, when the amount typed in the lower box differs from the calculation.
     if (ex.toEdited && a > 0 && t > 0) {
@@ -276,10 +290,48 @@ async function viewExchange(view) {
           h('td', { class: 'r' }, money(t.amount, t.currency)), h('td', { class: 'r' }, money(t.to_amount, t.to_currency)), h('td', { class: 'note' }, t.note)))))
       : h('div', { class: 'empty' }, h('b', null, '還沒有換匯記錄'), '完成第一筆換匯後會顯示在這裡。'));
 
+  // ---- bank comparison: the same amount at every bank's rate, best first, with each bank's last 30 days ------------------------
+  const cmpBox = h('section', { class: 'section ex-cmp' });
+  const hists = {};
+  const paintCmp = () => {
+    const typed = parseNum(ex.amount), a = typed > 0 ? typed : (buying ? 10000 : 1000);
+    const list = board.banks.map((b) => {
+      const qq = b[side], r = qq ? Number(qq.rate) : NaN;
+      return { b, qq, r, out: r > 0 ? roundTo(buying ? a / r : a * r, exDigits(toCcy)) : null };
+    });
+    const best = Math.max(...list.map((x) => (x.out == null ? -Infinity : x.out)));
+    list.sort((x, y) => (y.out == null ? -Infinity : y.out) - (x.out == null ? -Infinity : x.out));
+    const have = list.filter((x) => x.out != null).length;
+    cmpBox.replaceChildren(
+      h('div', { class: 'section-head' }, h('h2', null, buying ? `買 ${ex.ccy}：哪家最划算` : `賣 ${ex.ccy}：哪家最划算`)),
+      h('p', { class: 'hint', style: 'margin:0 0 6px' }, `${buying ? '用' : '賣出'} ${num(a, fromCcy)} ${fromCcy}${typed > 0 ? '' : '（還沒輸入金額，先用這個數字試算）'}，依各銀行最近記錄的${buying ? '賣出' : '買進'}匯率排序。`),
+      have < 2 ? h('div', { class: 'empty' }, h('b', null, '至少要有兩家銀行的匯率才能比較'), '在下面的牌告匯率表填好各家匯率，或按「更新市場參考價」。')
+        : h('div', { class: 'cmp-list', role: 'list' }, list.map((x, i) => {
+          const gap = x.out == null ? null : best - x.out, top = x.out != null && gap === 0;
+          const hist = hists[x.b.bank];
+          return h('div', { class: 'cmp-row' + (x.b.bank === ex.bank ? ' on' : '') + (top ? ' best' : ''), role: 'listitem' },
+            h('div', { class: 'cmp-bank' }, h('b', null, banks[x.b.bank]), top && have > 1 ? h('span', { class: 'cmp-badge' }, '最划算') : null,
+              h('small', { class: 'hint' }, x.qq ? `${fmtRate(x.r)} · ${shortTime(x.qq.at).slice(5)}` : '尚無牌價')),
+            h('div', { class: 'cmp-out num' }, x.out == null ? '—' : [num(x.out, toCcy), h('span', { class: 'ccy' }, toCcy)],
+              x.out != null && !top ? h('small', { class: 'cmp-gap' }, `比最優${buying ? '少換' : '少拿'} ${num(gap, toCcy)}`) : null),
+            h('div', { class: 'cmp-spark' }, hist === undefined ? h('span', { class: 'spark none' }, '…') : exSpark(hist, !buying)),
+            x.b.bank === ex.bank ? h('span', { class: 'cmp-now' }, '目前選這家')
+              : h('button', { class: 'btn sm', type: 'button', onclick: () => { ex.bank = x.b.bank; reset(true); } }, '改用這家'));
+        })),
+      h('p', { class: 'hint' }, '走勢是近 30 天你自己記下的匯率，不是銀行官方資料；比較不含手續費或臨櫃加價。'));
+  };
+  S.exCmp = paintCmp;
+  (async () => {
+    await Promise.all(board.banks.map(async (b) => {
+      try { hists[b.bank] = (await api('GET', `/api/fx/history?bank=${encodeURIComponent(b.bank)}&currency=${ex.ccy}&side=${side}&days=30`)).points; } catch (e) { hists[b.bank] = null; }
+    }));
+    paintCmp();
+  })();
+
+  const intro = pageIntro(`選銀行、方向和金額，匯率會帶入你最近記錄的牌告匯率；跟銀行 App 不一樣就直接改。換匯會記成「${base} 帳戶 ⇄ 外幣帳戶」的一筆轉帳。`);
   view.append(
-    h('div', { class: 'page-head' }, h('div', null, h('h1', null, '換匯', eyeButton('exchange')),
-      h('p', { class: 'sub' }, `選銀行、方向和金額，匯率會帶入你最近記錄的牌告匯率；跟銀行 App 不一樣就直接改。換匯會記成「${base} 帳戶 ⇄ 外幣帳戶」的一筆轉帳。`))),
-    h('div', { class: 'ex-grid' }, h('div', null, form), h('div', null, boardBox, trendBox)),
+    h('div', { class: 'page-head' }, h('div', null, h('h1', null, '換匯', eyeButton('exchange'), intro.btn), intro.p)),
+    h('div', { class: 'ex-grid' }, h('div', null, form), h('div', null, cmpBox, boardBox, trendBox)),
     recentBox);
   exPaint();
   paintAsk();
