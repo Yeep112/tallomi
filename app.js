@@ -52,7 +52,9 @@ function money(v, ccy, { sign = false, tone = false, tag = true } = {}) {
 const pad = (n) => String(n).padStart(2, '0');
 function nowLocal() { const d = new Date(); return `${d.getFullYear()}-${pad(d.getMonth() + 1)}-${pad(d.getDate())}T${pad(d.getHours())}:${pad(d.getMinutes())}:${pad(d.getSeconds())}`; }
 const shortTime = (t) => t.replace('T', ' ').slice(0, 16);
-const TX_PAGE = window.matchMedia('(max-width: 720px)').matches ? 40 : 100;      // a phone draws fewer rows at a time ("載入更多" adds the rest)
+// A phone: a narrow screen, or an iPhone held sideways (short, wide, touch). Everything that is "phone layout" in style.css uses the same test.
+const PHONE_Q = '(max-width: 720px), (max-height: 500px) and (orientation: landscape) and (pointer: coarse)';
+const TX_PAGE = window.matchMedia(PHONE_Q).matches ? 40 : 100;      // a phone draws fewer rows at a time ("載入更多" adds the rest)
 const onTouch = () => window.matchMedia('(pointer: coarse)').matches;      // finger instead of a mouse
 const lsGet = (k) => { try { return localStorage.getItem(k); } catch { return null; } };
 const lsSet = (k, v) => { try { localStorage.setItem(k, v); } catch { /* storage unavailable */ } };
@@ -115,7 +117,7 @@ function lockScroll() {
   if (scrollLocks++) return;
   const root = document.documentElement;
   lockedY = window.scrollY;
-  if (window.matchMedia('(max-width: 720px)').matches) { root.classList.add('modal-open', 'modal-pinned'); document.body.style.top = `-${lockedY}px`; }
+  if (window.matchMedia(PHONE_Q).matches) { root.classList.add('modal-open', 'modal-pinned'); document.body.style.top = `-${lockedY}px`; }
   else { const gap = window.innerWidth - root.clientWidth; root.classList.add('modal-open'); if (gap > 0) document.body.style.paddingRight = `${gap}px`; }
 }
 function unlockScroll() {
@@ -315,6 +317,7 @@ const SNAP_MAX_AGE = 10 * 60 * 1000;
 async function renderRoute() {
   if (!S.st) return;
   const my = (S.renderSeq = (S.renderSeq || 0) + 1);
+  S.afterShow = null;
   const route = currentRoute();
   const view = $('#view');
   const prev = S.route;
@@ -325,33 +328,49 @@ async function renderRoute() {
   });
   navReveal();
   if (!same) {                                         // another page
-    if (prev && prev !== route && view.childNodes.length && !S.charts.length && !view.querySelector('canvas, :scope > .empty')) routeSnaps[prev] = { nodes: [...view.childNodes], at: Date.now(), y: window.scrollY };
+    if (prev && prev !== route && view.childNodes.length && !S.charts.length && !view.querySelector('canvas, :scope > .empty, :scope > .skeleton')) routeSnaps[prev] = { nodes: [...view.childNodes], at: Date.now(), y: window.scrollY };
     S.charts.forEach((c) => c.destroy()); S.charts = [];
     for (const k of Object.keys(routeSnaps)) if (Date.now() - routeSnaps[k].at >= SNAP_MAX_AGE) delete routeSnaps[k];     // old pages are not kept around
     const snap = routeSnaps[route]; delete routeSnaps[route];
-    if (snap && Date.now() - snap.at < SNAP_MAX_AGE) { view.replaceChildren(...snap.nodes); window.scrollTo(0, snap.y); same = true; }
-    else {                                             // never seen (or too old): start from an empty page, with a thin progress line while it loads
-      view.replaceChildren(); view.classList.add('loading');
-      try { await ROUTES[route](view); } catch (e) { view.replaceChildren(h('div', { class: 'empty' }, h('b', null, '畫面載入失敗'), e.message)); }
-      finally { if (my === S.renderSeq) view.classList.remove('loading'); }
+    if (snap && Date.now() - snap.at < SNAP_MAX_AGE) { view.replaceChildren(...snap.nodes); window.scrollTo(0, snap.y); same = true; virtualRefresh(); }
+    else {                                             // never seen (or too old): grey placeholder blocks shaped like the page + a thin progress line while it is built out of sight
+      view.replaceChildren(skeletonFor(route)); view.classList.add('loading'); window.scrollTo(0, 0);
+      const fresh = await buildStage(route, my, true);
+      if (my === S.renderSeq) view.classList.remove('loading');
+      if (fresh) { view.replaceChildren(...fresh.childNodes); fresh.remove(); window.scrollTo(0, 0); afterShown(); }
       return;
     }
   }
   // The same page again (a change came in, e.g. the automatic price update): build the new page out of sight and swap it in
   // in one step, so the visible page never goes blank or jumps.
   const oldCharts = S.charts; S.charts = [];
-  const stage = h('div', { class: view.className, 'aria-hidden': 'true' });
+  const stage = await buildStage(route, my, false);
+  if (!stage) return;                                          // the person moved on to another page meanwhile
+  const y = window.scrollY;
+  oldCharts.forEach((c) => c.destroy());
+  if (stage.failed) view.replaceChildren(h('div', { class: 'empty' }, h('b', null, '畫面載入失敗'), stage.failed.message));
+  else view.replaceChildren(...stage.childNodes);
+  stage.remove();
+  window.scrollTo(0, y);
+  afterShown();
+}
+// Build a page in a hidden box next to the real one (same width, so charts and rows measure right). Returns the box, or null when the
+// person has already gone elsewhere. A page that fails to build shows its error in the box instead.
+async function buildStage(route, my, first) {
+  const view = $('#view');
+  const stage = h('div', { class: view.className.replace('loading', '').trim(), 'aria-hidden': 'true' });
   stage.style.cssText = `position:absolute;left:0;top:0;width:${view.clientWidth}px;visibility:hidden;pointer-events:none`;
   view.parentNode.appendChild(stage);
   let failed = null;
   try { await ROUTES[route](stage); } catch (e) { failed = e; }
-  if (my !== S.renderSeq) { stage.remove(); return; }          // the person moved on to another page meanwhile
-  const y = window.scrollY;
-  oldCharts.forEach((c) => c.destroy());
-  if (failed) view.replaceChildren(h('div', { class: 'empty' }, h('b', null, '畫面載入失敗'), failed.message));
-  else view.replaceChildren(...stage.childNodes);
-  stage.remove();
-  window.scrollTo(0, y);
+  if (my !== S.renderSeq) { stage.remove(); return null; }
+  if (failed) { stage.failed = failed; if (first) { stage.replaceChildren(h('div', { class: 'empty' }, h('b', null, '畫面載入失敗'), failed.message)); } }
+  return stage;
+}
+// What a page asked to do once it is really on screen (the stage cannot take focus): e.g. open the record dialog after the 記一筆 shortcut.
+function afterShown() {
+  virtualRefresh();
+  if (S.afterShow) { const f = S.afterShow; S.afterShow = null; setTimeout(f, 30); }
 }
 window.addEventListener('hashchange', renderRoute);
 // Moving between pages does not pile up "previous pages": the overview stays as the one page Back returns to, and going from one page to
@@ -590,18 +609,31 @@ function budgetCard() {
     h('div', { class: 'rows' }, shown.map(row),
       list.length > 5 ? h('button', { class: 'btn sm ghost', type: 'button', onclick: () => { S.budAll = !S.budAll; renderRoute(); } }, S.budAll ? '只顯示最接近上限的 5 個' : `顯示全部 ${list.length} 個`) : null));
 }
+// The top of the overview: total assets, this month's balance and how it compares with last month's first days.
+function overviewTop(s, base) {
+  const net = s.month.income - s.month.expense, p = s.prev_month;
+  const hasPrev = p && (p.income_so_far || p.expense_so_far || p.income || p.expense);
+  let delta = null;
+  if (hasPrev) {
+    const d = Math.round((net - (p.income_so_far - p.expense_so_far)) * 100) / 100;
+    delta = d === 0 ? h('span', { class: 'w-delta' }, '和上月同期一樣')
+      : h('span', { class: 'w-delta ' + (d > 0 ? 'pos' : 'neg'), title: `上月 1–${p.day} 日的結餘和這個月到今天相比` }, `比上月同期${d > 0 ? '多' : '少'} `, h('b', { class: 'num' }, num(Math.abs(d), base)));
+  }
+  return h('div', { class: 'worth top' },
+    h('div', { class: 'w-total' }, h('div', { class: 'label' }, `總資產（${base}）`), h('div', { class: 'big' }, num(s.total, base), h('small', null, base))),
+    h('div', { class: 'w-month' }, h('span', { class: 'label muted' }, `${Number(s.month.label.slice(5))} 月結餘`), h('b', { class: 'w-net ' + (net >= 0 ? 'pos' : 'neg') }, num(net, base, true)), delta),
+    h('div', { class: 'month' },
+      h('div', null, h('span', { class: 'label muted' }, '收入'), h('b', { class: 'pos' }, num(s.month.income, base))),
+      h('div', null, h('span', { class: 'label muted' }, '支出'), h('b', { class: 'neg' }, num(s.month.expense, base)))));
+}
 async function viewOverview(view) {
   const s = S.st.summary, base = S.st.base;
   const tiles = await overviewTiles();
   view.append(
     h('div', { class: 'page-head' }, h('h1', null, '總覽', eyeButton('overview'))),
-    tiles, recurringBanner() || '', owedBanner() || '',
-    h('div', { class: 'worth' },
-      h('div', null, h('div', { class: 'label' }, `總資產（${base}）`), h('div', { class: 'big' }, num(s.total, base), h('small', null, base))),
-      h('div', { class: 'month' },
-        h('div', null, h('span', { class: 'label muted' }, `${s.month.label} 收入`), h('b', { class: 'pos' }, num(s.month.income, base))),
-        h('div', null, h('span', { class: 'label muted' }, '支出'), h('b', { class: 'neg' }, num(s.month.expense, base))),
-        h('div', null, h('span', { class: 'label muted' }, '結餘'), h('b', { class: (s.month.income - s.month.expense) >= 0 ? 'pos' : 'neg' }, num(s.month.income - s.month.expense, base, true))))),
+    overviewTop(s, base),
+    recurringBanner() || '', owedBanner() || '',
+    tiles,
     transfersSwitch(s.month.with_transfers ? `本月含 ${s.month.transfers} 筆轉帳：轉出算支出、轉入算收入（換匯與買賣股票也是轉帳）` : ''),
   );
   const bc = budgetCard(); if (bc) view.append(bc);
@@ -663,26 +695,58 @@ function rowTap(open) {
     onkeydown: (e) => { if ((e.key === 'Enter' || e.key === ' ') && e.target === e.currentTarget) { e.preventDefault(); open(); } },
   };
 }
+const isPhone = () => window.matchMedia(PHONE_Q).matches;
+const VIRTUAL_MIN = 30;                  // a day-grouped list with this many lines is drawn a window at a time (virtualBody in app-list.js)
+
+// Record a past transaction again: the quick-add dialog opens with its fields filled in (time = now, no photos, no receipts).
+function entryFromTx(tx) {
+  return { type: tx.type, account_id: tx.account_id, to_account_id: tx.to_account_id, amount: String(tx.amount), to_amount: tx.to_amount == null ? '' : String(tx.to_amount),
+    category: tx.category, note: tx.note, tags: (tx.tags || []).join(' '), advance: tx.advance || '', counterparty: tx.counterparty || '', due: tx.due || '',
+    auto_settle: tx.auto_account_id || '', no_budget: !!tx.no_budget, no_stats: !!tx.no_stats };
+}
+async function swipeDelete(t) {
+  S.sel.delete(t.id);
+  try { const r = await api('DELETE', `/api/transactions/${t.id}`); await afterChange('已刪除（可以按「復原」）', undoAction(r.undo)); } catch (e) { fail(e); }
+}
+// One transaction line. On a phone it also slides sideways: left deletes (with 復原), right records the same thing again.
+function txRowEl(t, withBalance, viewer, sel, days) {
+  const tr = h('tr', { class: (sel && S.sel.has(t.id) ? 'picked ' : '') + 'tx-row', tabindex: '0', title: '點一下編輯這筆', ...rowOpen(t),
+    ...(days ? { 'data-of': t.time.slice(0, 10), hidden: days.folded.has(t.time.slice(0, 10)) } : {}) },
+    sel ? h('td', { class: 'c-sel' }, h('input', { type: 'checkbox', checked: S.sel.has(t.id), 'aria-label': `選取 ${shortTime(t.time)} ${t.note || t.category || ''}`, onchange: (e) => { if (e.target.checked) S.sel.add(t.id); else S.sel.delete(t.id); e.target.closest('tr').classList.toggle('picked', e.target.checked); sel.changed(); } })) : null,
+    h('td', { class: 'when' }, shortTime(t.time)),
+    h('td', { class: 'c-kind' }, t.settle_of ? h('span', { class: 'kind transfer', title: '朋友或公司還你的錢：不是收入，也不算進收支統計' }, '代墊收回') : h('span', { class: `kind ${t.type}` }, TYPE_LABEL[t.type])),
+    h('td', { class: 'c-cat' }, t.type === 'transfer' || t.type === 'adjust' ? typeChip(t.type)
+      : h('button', { class: 'chip-btn', type: 'button', title: `更換「${t.category || '未分類'}」的圖示`, 'aria-label': `更換「${t.category || '未分類'}」的圖示`, onclick: () => editCategoryIcon(t.category || '未分類') }, catChip(t.category || '未分類')),
+      h('span', { class: 'cat-name' }, t.category || '')),
+    h('td', { class: 'note', title: t.note }, t.note, advBadge(t), receiptMark(t), tagChips(t)),
+    h('td', { class: 'c-acct' }, t.type === 'transfer' ? `${t.account} → ${t.to_account}` : t.settle_of && t.settle_from ? `${t.settle_from} → ${t.account}` : t.account),
+    h('td', { class: 'r c-amt' }, amountCell(t, viewer)),
+    withBalance ? balanceCell(t, viewer) : null,
+    h('td', { class: 'act' }, h('button', { class: 'btn sm ghost', onclick: () => openTxDialog(t) }, '編輯')));
+  if (isPhone() && onTouch() && typeof enableSwipe === 'function') enableSwipe(tr, { onLeft: () => swipeDelete(t), onRight: t.settle_of ? null : () => openQuickAdd({ seed: entryFromTx(t), title: '再記一筆' }) });
+  return tr;
+}
 function txTable(items, withBalance = true, viewer = null, sel = null, days = null) {
   if (!items.length) return h('div', { class: 'empty' }, h('b', null, '還沒有符合的交易'), '用上方的「記一筆」開始記帳。');
-  return h('table', { class: 'ledger tx' },
-    h('thead', null, h('tr', null, sel ? h('th', { class: 'c-sel' }, '') : null, h('th', null, '時間'), h('th', null, '類型'), h('th', null, '類別'), h('th', null, '備註'), h('th', null, '帳戶'), h('th', { class: 'r' }, '金額'), withBalance ? h('th', { class: 'r' }, '餘額') : null, h('th', null, ''))),
-    h('tbody', null, items.flatMap((t, i) => [days && (i === 0 || items[i - 1].time.slice(0, 10) !== t.time.slice(0, 10))
-      ? dayHeadRow(days.map[t.time.slice(0, 10)], t.time.slice(0, 10), days.base, (sel ? 1 : 0) + 7 + (withBalance ? 1 : 0), days.folded.has(t.time.slice(0, 10)),
+  const cols = (sel ? 1 : 0) + 7 + (withBalance ? 1 : 0);
+  const head = h('thead', null, h('tr', null, sel ? h('th', { class: 'c-sel' }, '') : null, h('th', null, '時間'), h('th', null, '類型'), h('th', null, '類別'), h('th', null, '備註'), h('th', null, '帳戶'), h('th', { class: 'r' }, '金額'), withBalance ? h('th', { class: 'r' }, '餘額') : null, h('th', null, '')));
+  const dayOf = (t) => t.time.slice(0, 10);
+  const swipeCls = isPhone() && onTouch() ? ' swipe' : '';
+  if (days && typeof virtualBody === 'function' && items.length >= VIRTUAL_MIN) {         // thousands of lines: only the ones near the screen exist
+    const entries = () => { const out = []; let last = ''; for (const t of items) { const d = dayOf(t); if (d !== last) { out.push({ key: 'd' + d, kind: 'day', day: d }); last = d; } if (!days.folded.has(d)) out.push({ key: 't' + t.id, kind: 'tx', t }); } return out; };
+    const tbody = h('tbody'); let v;
+    const flip = (key) => { if (days.folded.has(key)) days.folded.delete(key); else days.folded.add(key); v.setEntries(entries()); const b = tbody.querySelector(`tr[data-day="${key}"] .day-toggle`); if (b) b.focus({ preventScroll: true }); };
+    const table = h('table', { class: 'ledger tx virt' + swipeCls }, head, tbody);
+    v = virtualBody(tbody, entries(), (e) => e.kind === 'day' ? dayHeadRow(days.map[e.day], e.day, days.base, cols, days.folded.has(e.day), flip) : txRowEl(e.t, withBalance, viewer, sel, null),
+      { cols, estimate: isPhone() ? { day: 46, tx: 92 } : { day: 40, tx: 44 } });
+    table._virt = v;
+    return table;
+  }
+  return h('table', { class: 'ledger tx' + swipeCls }, head,
+    h('tbody', null, items.flatMap((t, i) => [days && (i === 0 || dayOf(items[i - 1]) !== dayOf(t))
+      ? dayHeadRow(days.map[dayOf(t)], dayOf(t), days.base, cols, days.folded.has(dayOf(t)),
         (key, row) => { const now = !days.folded.has(key); if (now) days.folded.add(key); else days.folded.delete(key); toggleDay(row.closest('table'), row, key, now); }) : null,
-    h('tr', { class: (sel && S.sel.has(t.id) ? 'picked ' : '') + 'tx-row', tabindex: '0', title: '點一下編輯這筆', ...rowOpen(t),
-      ...(days ? { 'data-of': t.time.slice(0, 10), hidden: days.folded.has(t.time.slice(0, 10)) } : {}) },
-      sel ? h('td', { class: 'c-sel' }, h('input', { type: 'checkbox', checked: S.sel.has(t.id), 'aria-label': `選取 ${shortTime(t.time)} ${t.note || t.category || ''}`, onchange: (e) => { if (e.target.checked) S.sel.add(t.id); else S.sel.delete(t.id); e.target.closest('tr').classList.toggle('picked', e.target.checked); sel.changed(); } })) : null,
-      h('td', { class: 'when' }, shortTime(t.time)),
-      h('td', { class: 'c-kind' }, t.settle_of ? h('span', { class: 'kind transfer', title: '朋友或公司還你的錢：不是收入，也不算進收支統計' }, '代墊收回') : h('span', { class: `kind ${t.type}` }, TYPE_LABEL[t.type])),
-      h('td', { class: 'c-cat' }, t.type === 'transfer' || t.type === 'adjust' ? typeChip(t.type)
-        : h('button', { class: 'chip-btn', type: 'button', title: `更換「${t.category || '未分類'}」的圖示`, 'aria-label': `更換「${t.category || '未分類'}」的圖示`, onclick: () => editCategoryIcon(t.category || '未分類') }, catChip(t.category || '未分類')),
-        h('span', { class: 'cat-name' }, t.category || '')),
-      h('td', { class: 'note', title: t.note }, t.note, advBadge(t), receiptMark(t), tagChips(t)),
-      h('td', { class: 'c-acct' }, t.type === 'transfer' ? `${t.account} → ${t.to_account}` : t.settle_of && t.settle_from ? `${t.settle_from} → ${t.account}` : t.account),
-      h('td', { class: 'r c-amt' }, amountCell(t, viewer)),
-      withBalance ? balanceCell(t, viewer) : null,
-      h('td', { class: 'act' }, h('button', { class: 'btn sm ghost', onclick: () => openTxDialog(t) }, '編輯')))].filter(Boolean))));
+    txRowEl(t, withBalance, viewer, sel, days)].filter(Boolean))));
 }
 
 // The row under the search bar: income / expense over EVERY transaction that matches (not just the rows loaded below).
@@ -703,13 +767,55 @@ function tallyBar(r, filtered, onToggle) {
     cell('總收入', num(t.income, base), 'pos'),
     cell('總支出', num(t.expense, base), 'neg'),
     cell('淨額（收入 − 支出）', num(t.net, base, true), t.net >= 0 ? 'pos' : 'neg'),
-    h('label', { class: 'tally-toggle' }, h('input', { type: 'checkbox', checked: S.txf.transfers, onchange: (e) => onToggle(e.target.checked) }), h('span', null, '轉帳也算收支')),
-    side.length ? h('div', { class: 'tally-note hint' }, side.join('；')) : null);
+    ...(() => {
+      const toggle = h('label', { class: 'tally-toggle' }, h('input', { type: 'checkbox', checked: S.txf.transfers, onchange: (e) => onToggle(e.target.checked) }), h('span', null, '轉帳也算收支'));
+      const note = side.length ? h('div', { class: 'tally-note hint' }, side.join('；')) : null;
+      return isPhone() ? [h('details', { class: 'tally-more' }, h('summary', null, '轉帳與換算說明'), toggle, note)] : [toggle, note];     // a phone keeps the list near the top: the small print folds away
+    })());
 }
 
+const TX_TYPE_NAME = { income: '收入', expense: '支出', transfer: '轉帳', adjust: '調整' };
+// The filters in force, as small tags (phone): tap one to take it off.
+function filterChips(f) {
+  const day = (v) => (v ? (v.slice(0, 4) === String(new Date().getFullYear()) ? v.slice(5).replace('-', '/') : v) : '…');
+  const out = [], add = (label, clear) => out.push(h('button', { class: 'fchip', type: 'button', 'aria-label': `移除篩選：${label}`, onclick: () => { clear(); f.limit = TX_PAGE; f.back = null; renderRoute(); } }, h('span', null, label), h('b', { 'aria-hidden': 'true' }, '×')));
+  if (f.q) add(`搜尋：${f.q}`, () => { f.q = ''; });
+  if (f.type) add(TX_TYPE_NAME[f.type] || f.type, () => { f.type = ''; });
+  if (f.account_id) add(acct(f.account_id) ? acct(f.account_id).name : '帳戶', () => { f.account_id = ''; });
+  if (f.tag) add(`#${f.tag}`, () => { f.tag = ''; });
+  if (f.from || f.to) add(`${day(f.from)} ~ ${day(f.to)}`, () => { f.from = ''; f.to = ''; });
+  out.push(h('button', { class: 'fchip clear', type: 'button', onclick: () => { Object.assign(f, { q: '', type: '', account_id: '', from: '', to: '', tag: '', limit: TX_PAGE, back: null }); renderRoute(); } }, '全部清除'));
+  return h('div', { class: 'fchips', role: 'group', 'aria-label': '目前的篩選' }, out);
+}
+// Phone: all the filters in one dialog.
+function openTxFilterDialog(f) {
+  const d = { q: f.q, type: f.type, account_id: f.account_id, tag: f.tag, from: f.from, to: f.to };
+  const tags = [...new Set([...(S.st.tag_list || []).map((x) => x.tag), ...(f.tag ? [f.tag] : [])])];
+  const body = h('div', { class: 'rows', style: 'padding:0;max-width:none' },
+    h('label', { class: 'field' }, h('span', null, '搜尋'), h('input', { type: 'search', value: d.q, placeholder: '備註、類別、帳戶、標籤', autocomplete: 'off', oninput: (e) => { d.q = e.target.value; } })),
+    h('label', { class: 'field' }, h('span', null, '類型'), h('select', { onchange: (e) => { d.type = e.target.value; } },
+      [['', '全部'], ['income', '收入'], ['expense', '支出'], ['transfer', '轉帳'], ['adjust', '調整']].map(([v, l]) => h('option', { value: v, selected: d.type === v }, l)))),
+    h('label', { class: 'field' }, h('span', null, '帳戶'), h('select', { onchange: (e) => { d.account_id = e.target.value; } },
+      h('option', { value: '' }, '全部'), S.st.accounts.map((a) => h('option', { value: a.id, selected: String(a.id) === String(d.account_id) }, a.name)))),
+    tags.length ? h('label', { class: 'field' }, h('span', null, '標籤'), h('select', { onchange: (e) => { d.tag = e.target.value; } },
+      h('option', { value: '' }, '全部'), tags.map((t) => h('option', { value: t, selected: t === d.tag }, `#${t}`)))) : null,
+    h('label', { class: 'field' }, h('span', null, '從'), h('input', { type: 'date', value: d.from, onchange: (e) => { d.from = e.target.value; } })),
+    h('label', { class: 'field' }, h('span', null, '到'), h('input', { type: 'date', value: d.to, onchange: (e) => { d.to = e.target.value; } })));
+  openDialog({
+    title: '篩選交易', body,
+    extraFoot: h('button', { class: 'btn', type: 'button', style: 'margin-right:auto', onclick: (e) => { Object.assign(f, { q: '', type: '', account_id: '', from: '', to: '', tag: '', limit: TX_PAGE, back: null }); e.target.closest('dialog').close(); renderRoute(); } }, '清除'),
+    primary: { label: '套用', run: async () => { Object.assign(f, d, { limit: TX_PAGE, back: null }); renderRoute(); } },
+  });
+}
 async function viewTransactions(view) {
   const f = S.txf;
-  view.append(h('div', { class: 'page-head' }, h('h1', null, '交易', eyeButton('transactions'))), entryBar());
+  const phone = isPhone();
+  const nFilters = [f.q, f.type, f.account_id, f.tag, f.from || f.to].filter(Boolean).length;
+  if (phone) {                                  // the list comes first: a filter button, the filters in force as small tags, and a + button for a new entry
+    view.append(h('div', { class: 'page-head tx-head' }, h('h1', null, '交易', eyeButton('transactions')),
+      h('button', { class: 'btn' + (nFilters ? ' primary' : ''), type: 'button', 'aria-haspopup': 'dialog', onclick: () => openTxFilterDialog(f) }, nFilters ? `篩選（${nFilters}）` : '篩選')));
+    if (nFilters) view.append(filterChips(f));
+  } else view.append(h('div', { class: 'page-head' }, h('h1', null, '交易', eyeButton('transactions'))), entryBar());
   const listBox = h('div');
   const tallyBox = h('div');
   const selBox = h('div');
@@ -734,18 +840,49 @@ async function viewTransactions(view) {
     const live = new Set(shown.map((t) => t.id));
     S.sel.forEach((id) => { if (!live.has(id)) S.sel.delete(id); });       // a filter hid it: it is no longer selected
     const days = { base, folded: f.folded, map: Object.fromEntries((r.groups || []).map((g) => [g.key, g])) };
-    listBox.replaceChildren(txTable(r.items, true, f.account_id, { changed: paintBar }, days),
-      r.total > r.items.length ? h('div', { style: 'padding:14px 0;text-align:center' }, h('span', { class: 'muted' }, `顯示 ${r.items.length} / ${r.total} 筆　`), h('button', { class: 'btn sm', onclick: () => { f.limit += 100; load(); } }, '載入更多')) : h('div', { class: 'hint', style: 'padding:10px' }, `共 ${r.total} 筆`));
+    const table = txTable(r.items, true, f.account_id, { changed: paintBar }, days);
+    listBox.replaceChildren(table, moreBox(r));
+    if (table._virt) table._virt.refresh();
     paintBar();
   };
-  const load = async () => {
+  // Under the list: how many are shown, and the rest arrives by itself as the end comes near (or press the button)
+  let loadingMore = false;
+  const more = async () => {
+    const r0 = listBox._r;
+    if (!r0 || loadingMore || r0.items.length >= r0.total) return;
+    loadingMore = true;
+    try {
+      const qs = txQuery(); qs.set('limit', '300'); qs.set('offset', String(r0.items.length));
+      const r = await api('GET', '/api/transactions?' + qs);
+      if (listBox._r !== r0) return;                                    // the filters changed meanwhile
+      const have = new Set(r0.items.map((x) => x.id)), keys = new Set((r0.groups || []).map((g) => g.key));
+      const fresh = r.items.filter((x) => !have.has(x.id));
+      if (!fresh.length) r0.exhausted = true;                           // nothing new came: stop asking by itself (the button still works)
+      r0.items = r0.items.concat(fresh);
+      r0.groups = (r0.groups || []).concat((r.groups || []).filter((g) => !keys.has(g.key)));
+      paintList(r0);
+    } catch (e) { fail(e); } finally { loadingMore = false; }
+  };
+  const moreBox = (r) => {
+    if (r.total <= r.items.length) return h('div', { class: 'hint', style: 'padding:10px' }, `共 ${r.total} 筆`);
+    const box = h('div', { class: 'more-box', style: 'padding:14px 0;text-align:center' }, h('span', { class: 'muted' }, `顯示 ${r.items.length} / ${r.total} 筆　`), h('button', { class: 'btn sm', type: 'button', onclick: more }, '載入更多'));
+    if ('IntersectionObserver' in window && !r.exhausted) {
+      const io = new IntersectionObserver((es) => { if (es.some((x) => x.isIntersecting)) { io.disconnect(); more(); } }, { rootMargin: '900px 0px' });
+      setTimeout(() => io.observe(box), 0);
+    }
+    return box;
+  };
+  const txQuery = () => {
     const qs = new URLSearchParams({ limit: f.limit, group: f.group });
     if (f.tag) qs.set('tag', f.tag);
     if (!f.transfers) qs.set('transfers', '0');
     if (f.q) qs.set('q', f.q); if (f.type) qs.set('type', f.type); if (f.account_id) qs.set('account_id', f.account_id);
     if (f.from) qs.set('from', f.from); if (f.to) qs.set('to', f.to);
+    return qs;
+  };
+  const load = async () => {
     try {
-      const r = await api('GET', '/api/transactions?' + qs);
+      const r = await api('GET', '/api/transactions?' + txQuery());
       tallyBox.replaceChildren(tallyBar(r, !!(f.q || f.type || f.account_id || f.from || f.to || f.tag), (on) => { f.transfers = on; f.limit = TX_PAGE; load(); }));
       paintList(r);
     } catch (e) { tallyBox.replaceChildren(); selBox.replaceChildren(); listBox._r = null; listBox.replaceChildren(h('div', { class: 'empty' }, e.message)); }
@@ -758,7 +895,7 @@ async function viewTransactions(view) {
     f.back ? h('button', { class: 'btn ghost', type: 'button', onclick: () => {
       const b = f.back; Object.assign(f, { group: b.group, from: b.from, to: b.to, back: null, limit: TX_PAGE }); renderRoute();
     } }, `‹ 返回按${f.back.group === 'year' ? '年' : '月'}`) : null));
-  view.append(h('div', { class: 'filters' },
+  if (!phone) view.append(h('div', { class: 'filters' },
     h('label', { class: 'field' }, h('span', null, '搜尋'), h('input', { type: 'search', value: f.q, placeholder: '備註、類別、帳戶、標籤', oninput: (e) => { f.q = e.target.value; clearTimeout(timer); timer = setTimeout(() => { f.limit = 100; load(); }, 250); } })),
     h('label', { class: 'field' }, h('span', null, '類型'), h('select', { onchange: (e) => { f.type = e.target.value; load(); } },
       [['', '全部'], ['income', '收入'], ['expense', '支出'], ['transfer', '轉帳'], ['adjust', '調整']].map(([v, l]) => h('option', { value: v, selected: f.type === v }, l)))),
@@ -769,8 +906,14 @@ async function viewTransactions(view) {
     h('label', { class: 'field' }, h('span', null, '從'), h('input', { type: 'date', value: f.from, onchange: (e) => { f.from = e.target.value; load(); } })),
     h('label', { class: 'field' }, h('span', null, '到'), h('input', { type: 'date', value: f.to, onchange: (e) => { f.to = e.target.value; load(); } })),
     h('button', { class: 'btn ghost', onclick: () => { Object.assign(f, { q: '', type: '', account_id: '', from: '', to: '', tag: '', limit: TX_PAGE, back: null }); renderRoute(); } }, '清除篩選')));
+  if (phone && onTouch() && lsGet('pw_swipe_hint') !== '1') view.append(h('div', { class: 'swipe-hint', role: 'note' }, h('span', null, '小提示：交易往左滑是刪除（可以復原），往右滑是「再記一筆」。'),
+    h('button', { class: 'btn sm ghost', type: 'button', onclick: (e) => { lsSet('pw_swipe_hint', '1'); e.target.closest('.swipe-hint').remove(); } }, '知道了')));
   view.append(tallyBox, selBox, listBox);
-  if (S.focusAdd) { S.focusAdd = false; setTimeout(() => { const a = $('input[name=amount]'); if (a) { a.scrollIntoView({ block: 'center' }); if (!onTouch()) a.focus(); } }, 60); }
+  if (phone) view.append(h('button', { class: 'fab', type: 'button', 'aria-label': '記一筆', title: '記一筆', onclick: () => openQuickAdd({}) }, h('span', { 'aria-hidden': 'true' }, '+')));
+  if (S.focusAdd) {
+    S.focusAdd = false;
+    S.afterShow = phone ? () => openQuickAdd({}) : () => { const a = $('input[name=amount]'); if (a) { a.scrollIntoView({ block: 'center' }); if (!onTouch()) a.focus(); } };
+  }
   await load();
 }
 
@@ -912,8 +1055,36 @@ async function openResetDialog(a) {
   });
 }
 
+// Phone: one line per account (picture, name, balance); a tap opens the rest of it (opening balance, worth in the main currency, actions).
+function accountList(rows, base) {
+  return h('div', { class: 'acc-list' }, rows.map((a) => h('details', { class: 'acc-item' + (a.archived ? ' archived' : '') },
+    h('summary', null, accChip(a, 'sm'), h('span', { class: 'acc-name' }, h('span', { class: 'acc-title' }, a.name), h('span', { class: 'badge' }, a.currency)),
+      h('span', { class: 'acc-bal' }, money(a.balance, a.currency, { tone: true, tag: false })), h('span', { class: 'acc-chev', 'aria-hidden': 'true' }, '›')),
+    h('div', { class: 'acc-more' },
+      h('dl', null,
+        h('div', null, h('dt', null, '期初餘額'), h('dd', null, num(a.opening, a.currency))),
+        h('div', null, h('dt', null, `約合 ${base}`), h('dd', null, a.currency === base ? '—' : (a.base_value == null ? '需要匯率' : num(a.base_value, base)))),
+        h('div', null, h('dt', null, '交易數'), h('dd', null, String(a.tx_count)))),
+      h('div', { class: 'acc-acts' },
+        h('button', { class: 'btn sm', type: 'button', onclick: () => openAccountDialog(a) }, '編輯'),
+        a.archived || a.stock ? null : h('button', { class: 'btn sm', type: 'button', onclick: () => openCalibrateDialog(a) }, '校正'),
+        h('button', { class: 'btn sm', type: 'button', onclick: () => openResetDialog(a) }, '歸零'),
+        h('button', { class: 'btn sm ghost', type: 'button', onclick: () => { S.txf.account_id = String(a.id); S.txf.back = null; S.txf.limit = TX_PAGE; location.hash = '#/transactions'; } }, '看交易'))))));
+}
+// The net worth at the top: what you own, what you owe, and the total, in the main currency.
+function netWorthCard(accounts, base) {
+  let assets = 0, debts = 0;
+  for (const a of accounts) { if (a.archived && !a.balance) continue; const v = a.base_value; if (v == null) continue; if (v >= 0) assets += v; else debts += v; }
+  const total = S.st.summary.total, missing = S.st.summary.missing_rates || [];
+  return h('div', { class: 'net-card' },
+    h('div', { class: 'net-main' }, h('span', { class: 'label muted' }, `淨資產（${base}）`), h('b', { class: 'big num' + (total < 0 ? ' neg' : '') }, num(total, base), h('small', null, base))),
+    h('div', { class: 'net-parts' },
+      h('span', null, h('span', { class: 'label muted' }, '資產'), h('b', { class: 'num pos' }, num(assets, base))),
+      h('span', null, h('span', { class: 'label muted' }, '負債'), h('b', { class: 'num' + (debts < 0 ? ' neg' : '') }, num(debts, base)))),
+    missing.length ? h('div', { class: 'hint net-note' }, `缺少 ${missing.join('、')} 的匯率，這些帳戶還沒有算進去。`) : null);
+}
 async function viewAccounts(view) {
-  const base = S.st.base;
+  const base = S.st.base, phone = isPhone();
   const active = S.st.accounts.filter((a) => !a.archived), archived = S.st.accounts.filter((a) => a.archived);
   const table = (rows) => h('table', { class: 'ledger' },
     h('thead', null, h('tr', null, h('th', null, '帳戶'), h('th', { class: 'r' }, '期初餘額'), h('th', { class: 'r' }, '目前餘額'), h('th', { class: 'r' }, `約合 ${base}`), h('th', { class: 'r' }, '交易數'), h('th', null, ''))),
@@ -927,11 +1098,15 @@ async function viewAccounts(view) {
         h('button', { class: 'btn sm ghost', onclick: () => openAccountDialog(a) }, '編輯'),
         a.archived || a.stock ? null : h('button', { class: 'btn sm ghost', onclick: () => openCalibrateDialog(a) }, '校正'),
         h('button', { class: 'btn sm ghost', onclick: () => openResetDialog(a) }, '歸零'))))));
+  const list = (rows) => (phone ? accountList(rows, base) : table(rows));
+  const about = '每個帳戶有自己的幣別。餘額由期初餘額加上所有交易算出，所以修改或刪除舊交易時，餘額會自動跟著對。';
   view.append(
-    h('div', { class: 'page-head' }, h('div', null, h('h1', null, '帳戶', eyeButton('accounts')), h('p', { class: 'sub' }, '每個帳戶有自己的幣別。餘額由期初餘額加上所有交易算出，所以修改或刪除舊交易時，餘額會自動跟著對。')),
+    h('div', { class: 'page-head' }, h('div', null, h('h1', null, '帳戶', eyeButton('accounts')), phone ? null : h('p', { class: 'sub' }, about)),
       h('div', { class: 'head-btns' }, h('button', { class: 'btn', onclick: () => openCalibrateDialog(null) }, '校正餘額'), h('button', { class: 'btn primary', onclick: () => openAccountDialog(null) }, '新增帳戶'))),
-    h('section', { class: 'section' }, active.length ? table(active) : h('div', { class: 'empty' }, h('b', null, '還沒有帳戶'), '按右上角「新增帳戶」開始。')));
-  if (archived.length) view.append(h('section', { class: 'section' }, h('div', { class: 'section-head' }, h('h2', null, '已封存')), table(archived)));
+    active.length ? netWorthCard(S.st.accounts, base) : null,
+    h('section', { class: 'section' }, active.length ? list(active) : h('div', { class: 'empty' }, h('b', null, '還沒有帳戶'), '按右上角「新增帳戶」開始。')));
+  if (archived.length) view.append(h('section', { class: 'section' }, h('div', { class: 'section-head' }, h('h2', null, '已封存')), list(archived)));
+  if (phone) view.append(h('p', { class: 'hint' }, about));
 }
 
 // ------------------------------------------------------------------- reports
@@ -1075,7 +1250,62 @@ function importReportDialog(rep, title = '匯入完成') {
     rep.backup ? h('p', { class: 'hint', style: 'margin:0' }, '匯入前已自動備份。如果匯入的結果不對，可以按下面的「還原到匯入前」退回。') : null) });
 }
 
+// Settings are five folders that open and close, with a search box on top. The sections themselves are built exactly as before (settingsBody);
+// they are only sorted into groups here, by their heading, so a new section just lands in 「關於」 until it is listed.
+const SETTINGS_GROUPS = [
+  ['外觀', ['外觀'], '主題 顏色 配色 隱藏 金額 眼睛'],
+  ['帳務', ['類別', '幣別與匯率', '定期交易'], '類別 匯率 幣別 主要幣別 固定 訂閱 房租'],
+  ['同步', ['手機連線', '這支手機', 'Google 試算表', '離線模式'], 'sheets google 同步 金鑰 試算表 手機 tailscale 離線'],
+  ['資料', ['匯入資料', '匯出與備份', '備份與匯出', 'PIN 鎖', '危險區'], '匯入 匯出 csv 備份 還原 pin 密碼 鎖 清除 刪除'],
+  ['關於', ['軟體更新', '意見回饋', '關於這個版本', '切換版本'], '版本 更新 回饋 意見 開機 自動啟動 結束 關閉'],
+];
+function groupSettings(nodes) {
+  const titleOf = (n) => { const h2 = n.querySelector && n.querySelector('.section-head h2'); return h2 ? h2.textContent.trim() : ''; };
+  const buckets = SETTINGS_GROUPS.map(() => []);
+  for (const n of nodes) {
+    let i = SETTINGS_GROUPS.findIndex(([, titles]) => titles.includes(titleOf(n)));
+    if (i < 0) i = SETTINGS_GROUPS.length - 1;
+    buckets[i].push(n);
+  }
+  let saved = {}; try { saved = JSON.parse(lsGet('pw_set_open') || '{}') || {}; } catch { saved = {}; }
+  const defaultOpen = !isPhone();
+  const groups = SETTINGS_GROUPS.map(([name, , words], i) => {
+    if (!buckets[i].length) return null;
+    buckets[i].forEach((n) => { if (titleOf(n) === name) n.classList.add('dup-title'); });
+    const d = h('details', { class: 'set-group', 'data-group': name, 'data-words': words },
+      h('summary', null, h('h2', null, name), h('span', { class: 'set-n' }, `${buckets[i].filter((n) => titleOf(n)).length || 1} 項`), h('span', { class: 'set-chev', 'aria-hidden': 'true' }, '›')),
+      h('div', { class: 'set-body' }, buckets[i]));
+    d.open = name in saved ? !!saved[name] : defaultOpen;
+    d.addEventListener('toggle', () => { if (d.dataset.searching) return; saved[name] = d.open; lsSet('pw_set_open', JSON.stringify(saved)); });
+    return d;
+  }).filter(Boolean);
+  const none = h('div', { class: 'empty', hidden: true }, h('b', null, '找不到符合的設定'), '換個關鍵字試試，例如「備份」「匯率」「顏色」。');
+  const find = (q) => {
+    q = q.trim().toLowerCase();
+    let any = false;
+    for (const d of groups) {
+      const secs = [...d.querySelectorAll(':scope > .set-body > section')];
+      if (!q) { secs.forEach((x) => { x.hidden = false; }); d.hidden = false; if (d.dataset.searching) { delete d.dataset.searching; d.open = !!saved[d.dataset.group]; } continue; }
+      let hit = 0;
+      for (const x of secs) {
+        const ok = (x.textContent + ' ' + d.dataset.words + ' ' + d.dataset.group).toLowerCase().includes(q);
+        x.hidden = !ok; if (ok) hit++;
+      }
+      d.hidden = !hit; if (hit) { d.dataset.searching = '1'; d.open = true; any = true; }
+    }
+    none.hidden = !q || any;
+  };
+  const box = h('input', { type: 'search', placeholder: '搜尋設定（例如：備份、匯率、顏色）', 'aria-label': '搜尋設定', autocomplete: 'off', oninput: (e) => find(e.target.value) });
+  return [h('div', { class: 'set-search' }, box), ...groups, none];
+}
 async function viewSettings(view) {
+  const tmp = h('div');
+  await settingsBody(tmp);
+  const nodes = [...tmp.childNodes], head = nodes.shift();
+  view.append(head, ...groupSettings(nodes));
+}
+
+async function settingsBody(view) {
   const st = S.st, sh = st.sheets;
   view.append(h('div', { class: 'page-head' }, h('h1', null, '設定')));
 
@@ -1169,6 +1399,28 @@ async function viewSettings(view) {
     try { const r = await api('POST', '/api/sheets/service-account', fd, true); await afterChange(`已載入服務帳戶：${r.email}`); } catch (er) { fail(er); }
   } });
   const saveSheets = async () => { const r = await api('PUT', '/api/sheets/config', { key: keyIn.value, worksheet: wsIn.value, auto: auto.checked }); S.st.sheets = r; updateSyncLine(r); return r; };
+  // "測試連線": not just "connected" but where a sync would land - is the chosen tab there, did Tallomi write it, do both sides hold the same number of entries
+  function sheetsReport(r) {
+    const line = (ok, text) => h('div', { class: 'sr-line' }, h('b', { class: ok === true ? 'pos' : ok === false ? 'neg' : '' }, ok === true ? '✓' : ok === false ? '✗' : '•'), h('span', null, text));
+    const use = (name) => async () => { wsIn.value = name; try { await saveSheets(); dlg.close(); await afterChange(`之後會寫入分頁「${name}」`); } catch (e) { fail(e); } };
+    const rows = [line(true, `已連上「${r.title}」，分頁：${r.worksheets.join('、') || '（沒有）'}`)];
+    if (!r.exists) {
+      rows.push(line(false, `找不到名為「${r.worksheet}」的分頁。現在按「立即同步全部」會新增一個叫「${r.worksheet}」的新分頁，而不是寫進你改過名的那一個。`));
+      if ((r.suggest || []).length) rows.push(h('div', { class: 'sr-pick' }, h('span', null, '看起來是 Tallomi 寫的分頁：'), ...r.suggest.map((n) => h('button', { class: 'btn primary sm', type: 'button', onclick: use(n) }, `改用「${n}」`))));
+      else rows.push(h('div', { class: 'sr-pick' }, h('span', null, '或改成其中一個現有分頁：'), ...r.worksheets.map((n) => h('button', { class: 'btn sm', type: 'button', onclick: use(n) }, n))));
+    } else {
+      rows.push(line(true, `會寫入的分頁「${r.worksheet}」找到了`));
+      if (r.format === 'tallomi') rows.push(line(true, '分頁裡是 Tallomi 寫入的格式'));
+      else if (r.format === 'other') rows.push(line(false, '分頁裡有不是 Tallomi 寫入的資料（可能是舊記帳表）。同步時會先問你要不要覆蓋，不會直接蓋掉。'));
+      else if (r.format === 'empty') rows.push(line(null, '分頁是空的，第一次同步會把整份帳本寫進去'));
+      if (r.format === 'tallomi' && r.sheet_rows != null && r.local_rows != null) {
+        const gap = r.local_rows - r.sheet_rows;
+        rows.push(gap === 0 ? line(true, `試算表 ${r.sheet_rows} 筆、這台電腦 ${r.local_rows} 筆，一致`)
+          : line(false, `試算表 ${r.sheet_rows} 筆、這台電腦 ${r.local_rows} 筆（${gap > 0 ? `少 ${gap}` : `多 ${-gap}`} 筆），按「立即同步全部」就會補齊`));
+      }
+    }
+    const dlg = openDialog({ title: '試算表連線檢查', body: h('div', { class: 'sr' }, ...rows) });
+  }
   const autosave = (msg) => async () => { try { await saveSheets(); if (msg) toast(msg(auto.checked)); await refresh(); } catch (e) { fail(e); } };
   keyIn.addEventListener('change', autosave(() => '已儲存試算表設定'));
   wsIn.addEventListener('change', autosave(() => '已儲存工作表名稱'));
@@ -1187,7 +1439,7 @@ async function viewSettings(view) {
       h('label', { class: 'row-inline' }, auto, h('span', null, '有變動時自動同步到試算表')),
       h('div', { class: 'row-inline' },
         h('button', { class: 'btn primary', onclick: async () => { try { await saveSheets(); await afterChange('已儲存 Google 試算表設定'); } catch (e) { fail(e); } } }, '儲存設定'),
-        h('button', { class: 'btn', onclick: async (e) => { e.target.disabled = true; try { await saveSheets(); const r = await api('POST', '/api/sheets/test'); toast(`連線成功：「${r.title}」，共 ${r.worksheets.length} 個工作表`); } catch (er) { fail(er); } e.target.disabled = false; } }, '測試連線'),
+        h('button', { class: 'btn', onclick: async (e) => { e.target.disabled = true; try { await saveSheets(); const r = await api('POST', '/api/sheets/test'); sheetsReport(r); } catch (er) { fail(er); } e.target.disabled = false; } }, '測試連線'),
         h('button', { class: 'btn', onclick: async (e) => {
           e.target.disabled = true;
           try {
@@ -1453,7 +1705,13 @@ async function revWatch() {
   document.addEventListener('focusin', (e) => {
     const el = e.target;
     if (!(el.tagName === 'INPUT' && /^(text|search|tel|url|email|number|password)$/.test(el.type)) && el.tagName !== 'TEXTAREA') return;
-    if (window.matchMedia('(max-width: 720px)').matches) setTimeout(() => { if (document.activeElement === el) el.scrollIntoView({ block: 'center', behavior: 'smooth' }); }, 350);
+    if (window.matchMedia(PHONE_Q).matches) setTimeout(() => {
+      if (document.activeElement !== el) return;
+      if (el.closest('dialog')) { el.scrollIntoView({ block: 'center', behavior: 'smooth' }); return; }       // a sheet is lifted above the keyboard; its own body scrolls
+      const vv = window.visualViewport, seen = vv ? vv.height : window.innerHeight;                         // the part of the screen the keyboard leaves
+      const r = el.getBoundingClientRect(), want = r.top + r.height / 2 - seen / 2;
+      if (r.bottom > seen - 8 || r.top < 8) window.scrollBy({ top: want, behavior: 'smooth' });
+    }, 350);
   });
   if (!phone) revWatch();
   // Screen locked / another app in front: remember when we left. Coming back, only a long absence or a new day reloads the

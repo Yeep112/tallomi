@@ -39,7 +39,7 @@ function exPaint() {
 }
 // While the exchange page is open, notice when a background update (twice a day) or a manual one has finished.
 // A finished update is already in the rate table; the form is only changed after the person says yes (see the ask box).
-const exTyping = () => { const el = document.activeElement; return !!(el && el.closest && el.closest('#view') && /^(INPUT|SELECT|TEXTAREA)$/.test(el.tagName)); };
+const exTyping = () => { const el = document.activeElement; return !!(el && el.closest && el.closest('#view, dialog[open]') && /^(INPUT|SELECT|TEXTAREA)$/.test(el.tagName)); };      // a buy / sell dialog is outside #view: a price update must not rebuild it under the person's thumb (the keyboard would drop)
 async function exWatch() {
   if (S.exWatching) return;
   S.exWatching = true;

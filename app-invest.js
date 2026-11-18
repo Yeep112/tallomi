@@ -344,8 +344,8 @@ async function viewInvest(view) {
   async function deleteTrades() {
     const ids = [...inv.sel];
     if (!await confirmBox({ title: `刪除 ${ids.length} 筆買賣紀錄？`, confirmLabel: '刪除', danger: true,
-      message: h('p', null, '這些買賣當時轉出、轉入的錢會一起還原，持股與成本會重新計算。如果刪掉買進後，後面的賣出就沒有股票可賣，會整批取消並說明原因。刪除後無法復原。') })) return;
-    try { const r = await api('POST', '/api/invest/trades/delete', { ids }); inv.sel.clear(); watchSync(); await refresh(); toast(`已刪除 ${r.deleted} 筆買賣紀錄`); } catch (err) { fail(err); }
+      message: h('p', null, '這些買賣當時轉出、轉入的錢會一起還原，持股與成本會重新計算。如果刪掉買進後，後面的賣出就沒有股票可賣，會整批取消並說明原因。刪除後 1 分鐘內可以按「復原」。') })) return;
+    try { const r = await api('POST', '/api/invest/trades/delete', { ids }); inv.sel.clear(); await afterChange(`已刪除 ${r.deleted} 筆買賣紀錄`, undoAction(r.undo)); } catch (err) { fail(err); }
   }
   const paintHist = () => {
     const have = new Set(board.trades.map((t) => t.id));
@@ -362,7 +362,7 @@ async function viewInvest(view) {
       h('td', { class: 'r t-real', 'data-label': '實現損益' }, t.realized == null ? null : h('span', { class: 'num tw' + twTone(t.realized) }, num(t.realized, t.currency, true))),
       h('td', { class: 'act' }, h('button', { class: 'btn sm ghost', type: 'button', onclick: () => editTrade(t) }, '編輯'), h('button', { class: 'btn sm ghost', type: 'button', onclick: async () => {
         if (!await confirmBox({ title: '刪除這筆買賣紀錄？', message: `${t.side === 'buy' ? '買進' : '賣出'} ${t.name || t.symbol} ${t.shares} 股 @${t.price}。${t.moved_money ? '當時轉出／轉入的錢也會一起還原。' : ''}`, confirmLabel: '刪除', danger: true })) return;
-        try { await api('DELETE', `/api/invest/trades/${t.id}`); watchSync(); await refresh(); toast('已刪除買賣紀錄'); } catch (err) { fail(err); }
+        try { const r = await api('DELETE', `/api/invest/trades/${t.id}`); await afterChange('已刪除買賣紀錄', undoAction(r.undo)); } catch (err) { fail(err); }
       } }, '刪除'))));
     histBox.replaceChildren(h('div', { class: 'section-head' }, h('h2', null, '買賣紀錄')), histBar,
       rows.length ? h('div', { class: 'tablewrap' }, h('table', { class: 'ledger stack inv-hist' },

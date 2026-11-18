@@ -364,7 +364,7 @@ tr.cmp-total td { border-top: 2px solid var(--line); font-weight: 600; }
 .qr svg { width: 100%; height: 100%; display: block; }
 input.devname { width: 100%; max-width: 240px; }
 
-@media (max-width: 720px) {
+@media (max-width: 720px), (max-height: 500px) and (orientation: landscape) and (pointer: coarse) {
   html { font-size: 16px; -webkit-text-size-adjust: 100%; }
   body { overscroll-behavior-y: none; -webkit-tap-highlight-color: transparent; }
   input, select, textarea { font-size: 16px; min-height: 44px; }             /* 16px stops iOS from zooming into a field */
@@ -448,7 +448,7 @@ input.devname { width: 100%; max-width: 240px; }
 }
 /* the installed app: menus and buttons are not text to select. Never on body: iOS refuses to bring up the keyboard for fields inside a no-select area. */
 @media (display-mode: standalone) { .side, .btn, .seg button, .nav a { -webkit-user-select: none; user-select: none; -webkit-touch-callout: none; } }
-@media (max-width: 720px) {
+@media (max-width: 720px), (max-height: 500px) and (orientation: landscape) and (pointer: coarse) {
   .ledger.stack thead { display: none; }
   .ledger.stack, .ledger.stack tbody { display: block; }
   .ledger.stack tr { display: grid; grid-template-columns: 1fr 1fr; gap: 6px 14px; padding: 12px 2px; border-bottom: 1px solid var(--line-2); }
@@ -464,7 +464,7 @@ input.devname { width: 100%; max-width: 240px; }
   .inv-lots .inv-lot-table { display: block; overflow-x: auto; }
   .inv-pricebox input { width: 100%; }
 }
-@media (max-width: 720px) {
+@media (max-width: 720px), (max-height: 500px) and (orientation: landscape) and (pointer: coarse) {
   .seg { max-width: 100%; overflow-x: auto; } .seg button { white-space: nowrap; padding: 7px 12px; }
 }
 .pair-card .btn { justify-content: center; width: 100%; min-height: 48px; }
@@ -509,7 +509,7 @@ td.name .cico { margin-right: 8px; }
 .lib-item .cico { --chip: 40px; }
 .lib-del { position: absolute; top: -4px; right: -4px; width: 18px; height: 18px; border-radius: 50%; border: 0; background: var(--ink-3); color: #fff; font-size: 12px; line-height: 18px; padding: 0; cursor: pointer; }
 .lib-del:hover { background: var(--ink); }
-@media (max-width: 720px) { .lib-del { width: 24px; height: 24px; line-height: 24px; font-size: 15px; top: -6px; right: -6px; } }
+@media (max-width: 720px), (max-height: 500px) and (orientation: landscape) and (pointer: coarse) { .lib-del { width: 24px; height: 24px; line-height: 24px; font-size: 15px; top: -6px; right: -6px; } }
 .ip-upload { display: flex; flex-wrap: wrap; align-items: center; gap: 10px; }
 .ip-preview { display: flex; align-items: center; gap: 14px; }
 .emoji-grid { display: grid; grid-template-columns: repeat(auto-fill, minmax(44px, 1fr)); gap: 4px; max-height: 38vh; overflow-y: auto; overscroll-behavior: contain; padding: 6px; border: 1px solid var(--line-2); border-radius: 10px; }
@@ -523,7 +523,7 @@ td.name .cico { margin-right: 8px; }
 .ip-colors { display: flex; flex-wrap: wrap; gap: 8px; }
 .ip-colors .sw { width: 30px; height: 30px; border-radius: 50%; border: 2px solid transparent; cursor: pointer; padding: 0; }
 .ip-colors .sw.on { border-color: var(--ink); box-shadow: 0 0 0 2px var(--surface) inset; }
-@media (max-width: 720px) {
+@media (max-width: 720px), (max-height: 500px) and (orientation: landscape) and (pointer: coarse) {
   .ledger.tx .c-cat { display: flex; align-items: center; gap: 8px; }
   .ledger.tx .c-cat .cat-name { overflow: hidden; text-overflow: ellipsis; }
   .ledger.tx .c-cat .cico, .ledger.tx .c-cat .chip-btn { margin-right: 0; }
@@ -559,7 +559,7 @@ td.name .cico { margin-right: 8px; }
 .mk-canvas { position: relative; height: 280px; }
 .mk-canvas .empty { height: 100%; display: grid; place-content: center; text-align: center; }
 .mk-stats { display: flex; flex-wrap: wrap; gap: 4px 16px; margin-top: 8px; font-size: 14px; }
-@media (max-width: 720px) {
+@media (max-width: 720px), (max-height: 500px) and (orientation: landscape) and (pointer: coarse) {
   .mk-canvas { height: 230px; }
   .mk-price .big { font-size: 28px; }
   .mk-table td.r { display: block; }
@@ -569,7 +569,7 @@ td.name .cico { margin-right: 8px; }
 .mk-table td.act { white-space: nowrap; }
 .mk-table td.act .btn + .btn { margin-left: 6px; }
 .inv-tabbar + div > .sub, .inv-tabbar + div + div > .sub { margin-top: 10px; }
-@media (max-width: 720px) {
+@media (max-width: 720px), (max-height: 500px) and (orientation: landscape) and (pointer: coarse) {
   .mk-ranges { display: flex; width: 100%; overflow: visible; }
   .mk-ranges button { flex: 1; padding: 9px 0; }
   .mk-sub { display: none; }
@@ -591,7 +591,7 @@ td.name .cico { margin-right: 8px; }
 .lg-name { flex: 1 1 auto; min-width: 0; overflow-wrap: anywhere; }
 .lg-val { flex: 0 0 auto; font-variant-numeric: tabular-nums; }
 .lg-val em { font-style: normal; color: var(--ink-3); font-size: 12.5px; }
-@media (max-width: 720px) { .lg-row { padding: 9px 4px; font-size: 15px; } }
+@media (max-width: 720px), (max-height: 500px) and (orientation: landscape) and (pointer: coarse) { .lg-row { padding: 9px 4px; font-size: 15px; } }
 
 /* categories page */
 .cm-add { display: flex; flex-wrap: wrap; gap: 10px 12px; align-items: flex-end; }
@@ -600,7 +600,7 @@ td.name .cico { margin-right: 8px; }
 .cm-row { display: flex; align-items: center; gap: 14px; padding: 10px 2px; border-bottom: 1px solid var(--line-2); }
 .cm-main { flex: 1 1 auto; min-width: 0; display: flex; flex-direction: column; gap: 2px; overflow-wrap: anywhere; }
 .cm-acts { flex: 0 0 auto; display: flex; gap: 2px; }
-@media (max-width: 720px) { .cm-row { flex-wrap: wrap; } .cm-acts { width: 100%; justify-content: flex-end; } }
+@media (max-width: 720px), (max-height: 500px) and (orientation: landscape) and (pointer: coarse) { .cm-row { flex-wrap: wrap; } .cm-acts { width: 100%; justify-content: flex-end; } }
 
 /* backup list: tick boxes, scrolls when long */
 .bk-bar { flex-wrap: wrap; gap: 8px 14px; padding: 4px 0 8px; }
@@ -621,7 +621,7 @@ td.name .cico { margin-right: 8px; }
 .bud-row.over .bud-note { color: var(--expense); }
 @media (prefers-reduced-motion: reduce) { .bud-bar i { transition: none; } }
 /* phone: the report chart-type buttons share the full width instead of running off the edge */
-@media (max-width: 720px) {
+@media (max-width: 720px), (max-height: 500px) and (orientation: landscape) and (pointer: coarse) {
   .controls > .seg { display: flex; width: 100%; }
   .controls > .seg button { flex: 1 1 0; min-width: 0; padding: 9px 2px; font-size: 13.5px; white-space: nowrap; }
 }
@@ -645,7 +645,7 @@ td.name .cico { margin-right: 8px; }
 .ledger.period td.pbar { width: 22%; min-width: 90px; }
 .ledger.period td.pbar span { display: block; height: 8px; border-radius: 4px; background: var(--brass); opacity: .7; min-width: 2px; }
 .ledger.period tr.click:focus-visible { outline: 2px solid var(--primary); outline-offset: -2px; }
-@media (max-width: 720px) {
+@media (max-width: 720px), (max-height: 500px) and (orientation: landscape) and (pointer: coarse) {
   .ledger.tx tr.day-row { display: block; padding: 0; margin-top: 6px; }
   .ledger.tx tr.day-row td { display: block; padding: 8px 6px; }
   .ledger.stack.period td.pbar { display: none; }
@@ -696,7 +696,7 @@ td.name .cico { margin-right: 8px; }
 .cat-menu-list { display: grid; gap: 8px; }
 .cat-menu-item { justify-content: flex-start; gap: 12px; padding: 12px 14px; font-size: 16px; }
 .banner.owed { margin-top: 10px; }
-@media (max-width: 720px) {
+@media (max-width: 720px), (max-height: 500px) and (orientation: landscape) and (pointer: coarse) {
   .tile-grid { grid-template-columns: repeat(4, minmax(0, 1fr)); gap: 8px; }
   .tile { min-height: 118px; padding: 10px 2px 8px; border-radius: 16px; gap: 6px; }
   .tile .cico.xl { --chip: 40px; }
@@ -724,7 +724,7 @@ td.name .cico { margin-right: 8px; }
 .cal-day .section-head h2 { font-weight: 500; }
 .cal-day-net { font-size: 15px; }
 .cal-top input[type="month"] { padding: 5px 8px; border: 1px solid var(--line); border-radius: 5px; background: var(--surface); }
-@media (max-width: 720px) {
+@media (max-width: 720px), (max-height: 500px) and (orientation: landscape) and (pointer: coarse) {
   .cal { padding: 8px 6px 12px; border-radius: 14px; }
   .cal-grid { gap: 4px; }
   .cal-cell { min-height: 54px; border-radius: 8px; padding: 4px 0 3px; }
@@ -750,7 +750,7 @@ td.name .cico { margin-right: 8px; }
 .adv-acts { display: flex; gap: 6px; flex-wrap: wrap; justify-content: flex-end; }
 .adv-pays { grid-column: 1 / -1; list-style: none; margin: 0; padding: 6px 10px; background: var(--paper); border-radius: 8px; display: grid; gap: 4px; font-size: 13.5px; }
 .adv-pays li { display: flex; justify-content: space-between; align-items: center; gap: 8px; }
-@media (max-width: 720px) { .adv-row { grid-template-columns: 1fr auto; } .adv-acts { grid-column: 1 / -1; justify-content: flex-start; } }
+@media (max-width: 720px), (max-height: 500px) and (orientation: landscape) and (pointer: coarse) { .adv-row { grid-template-columns: 1fr auto; } .adv-acts { grid-column: 1 / -1; justify-content: flex-start; } }
 .tpl-bar { display: flex; flex-wrap: wrap; align-items: center; gap: 6px 8px; flex: 1 0 100%; }
 .tpl-label { color: var(--ink-3); font-size: 13px; }
 .tpl-chips { display: inline-flex; flex-wrap: wrap; gap: 6px; }
@@ -760,7 +760,7 @@ td.name .cico { margin-right: 8px; }
 .tpl-chip .cico.sm { --chip: 22px; }
 .tpl-row { display: flex; justify-content: space-between; align-items: center; gap: 10px; padding: 6px 0; border-bottom: 1px solid var(--line-2); }
 .tpl-main { display: grid; }
-@media (max-width: 720px) { .tpl-chips { flex-wrap: nowrap; overflow-x: auto; max-width: 100%; padding-bottom: 2px; } .tpl-chip { flex: 0 0 auto; } }
+@media (max-width: 720px), (max-height: 500px) and (orientation: landscape) and (pointer: coarse) { .tpl-chips { flex-wrap: nowrap; overflow-x: auto; max-width: 100%; padding-bottom: 2px; } .tpl-chip { flex: 0 0 auto; } }
 
 /* 1.25.0 — drag to reorder tiles, income + expense in the calendar, tiles typed before */
 .tile { touch-action: manipulation; user-select: none; -webkit-user-select: none; -webkit-touch-callout: none; }
@@ -775,7 +775,7 @@ td.name .cico { margin-right: 8px; }
 .cal-cell { min-height: 78px; }
 .tpl-sep { align-self: center; font-size: 12px; color: var(--ink-3); padding: 0 2px; }
 .tpl-chip.auto { border-style: dashed; background: transparent; }
-@media (max-width: 720px) { .cal-cell { min-height: 66px; } .cal-in, .cal-out, .cal-nums .cal-net { font-size: 9.5px; } }
+@media (max-width: 720px), (max-height: 500px) and (orientation: landscape) and (pointer: coarse) { .cal-cell { min-height: 66px; } .cal-in, .cal-out, .cal-nums .cal-net { font-size: 9.5px; } }
 .amounts-hidden .cal-in, .amounts-hidden .cal-out { color: var(--ink); }
 
 /* 1.25.1 — the page behind a dialog stays put; dialogs never stick out of the screen (anything wider scrolls sideways inside the dialog) */
@@ -787,7 +787,7 @@ dialog form { min-width: 0; max-width: 100%; }
 .dlg-body > *, .dlg-body .grid2 > *, .dlg-body .rows > *, .dlg-body .field { min-width: 0; max-width: 100%; }
 .dlg-body input:not([type=checkbox]):not([type=radio]), .dlg-body select, .dlg-body textarea { max-width: 100%; box-sizing: border-box; min-width: 0; }
 .dlg-body table { max-width: none; }
-@media (max-width: 720px) {
+@media (max-width: 720px), (max-height: 500px) and (orientation: landscape) and (pointer: coarse) {
   dialog, dialog.wide { left: 0; right: 0; width: auto; max-width: 100%; margin-left: 0; margin-right: 0; }
   .dlg-foot { min-width: 0; }
 }
@@ -800,7 +800,7 @@ dialog form { min-width: 0; max-width: 100%; }
 .tpl-manage { display: grid; }
 .tpl-row { flex-wrap: wrap; }
 .cal-cell { touch-action: manipulation; -webkit-touch-callout: none; user-select: none; -webkit-user-select: none; }
-@media (max-width: 720px) { .tpl-row .tpl-btns { width: 100%; justify-content: flex-end; flex-wrap: wrap; } }
+@media (max-width: 720px), (max-height: 500px) and (orientation: landscape) and (pointer: coarse) { .tpl-row .tpl-btns { width: 100%; justify-content: flex-end; flex-wrap: wrap; } }
 .tpl-sep { white-space: nowrap; flex: 0 0 auto; }
 
 /* 1.28.0 — due dates and overdue reminders for advances */
@@ -812,7 +812,7 @@ dialog form { min-width: 0; max-width: 100%; }
 .banner.owed.late { border-left-color: var(--expense); }
 .nav-badge { margin-left: auto; min-width: 18px; height: 18px; padding: 0 5px; border-radius: 9px; background: var(--expense); color: #fff; font-size: 11px; font-weight: 700; line-height: 18px; text-align: center; }
 .adv-due .adv-quick { display: flex; flex-wrap: wrap; gap: 4px; margin-top: 4px; }
-@media (max-width: 720px) { .nav a { position: relative; } .nav-badge { position: absolute; top: 2px; right: calc(50% - 22px); margin: 0; min-width: 16px; height: 16px; line-height: 16px; font-size: 10px; } }
+@media (max-width: 720px), (max-height: 500px) and (orientation: landscape) and (pointer: coarse) { .nav a { position: relative; } .nav-badge { position: absolute; top: 2px; right: calc(50% - 22px); margin: 0; min-width: 16px; height: 16px; line-height: 16px; font-size: 10px; } }
 .amounts-hidden .due-mark.late, .amounts-hidden .due-mark.soon { color: var(--ink); }
 .tpl-grip { flex: 0 0 auto; width: 32px; height: 36px; border: 0; background: transparent; color: var(--ink-3); font-size: 22px; line-height: 1; cursor: grab; touch-action: none; user-select: none; -webkit-user-select: none; border-radius: 6px; }
 .tpl-grip:hover { background: var(--hover); color: var(--ink); } .tpl-grip:focus-visible { outline: 3px solid var(--focus); }
@@ -821,10 +821,10 @@ dialog form { min-width: 0; max-width: 100%; }
 .tpl-chip-wrap .tpl-chip { padding-right: 26px; }
 .tpl-x { position: absolute; right: 4px; top: 50%; transform: translateY(-50%); width: 20px; height: 20px; border: 0; border-radius: 50%; background: transparent; color: var(--ink-3); font-size: 15px; line-height: 1; cursor: pointer; padding: 0; }
 .tpl-x:hover, .tpl-x:focus-visible { background: var(--hover); color: var(--expense); }
-.cal-cell { min-height: 86px; } @media (max-width: 720px) { .cal-cell { min-height: 72px; } }
+.cal-cell { min-height: 86px; } @media (max-width: 720px), (max-height: 500px) and (orientation: landscape) and (pointer: coarse) { .cal-cell { min-height: 72px; } }
 .tpl-tools { display: inline-flex; flex-wrap: wrap; align-items: center; gap: 4px 10px; margin-left: auto; }
 .tpl-tools .btn { white-space: nowrap; }
-@media (min-width: 721px) { .tpl-bar { flex-wrap: nowrap; align-items: flex-start; } .tpl-label { padding-top: 6px; } .tpl-chips { flex: 1 1 0; min-width: 0; } .tpl-tools { flex: 0 0 auto; flex-wrap: nowrap; padding-top: 2px; } }
+@media (min-width: 721px) and (min-height: 501px), (min-width: 721px) and (orientation: portrait), (min-width: 721px) and (pointer: fine) { .tpl-bar { flex-wrap: nowrap; align-items: flex-start; } .tpl-label { padding-top: 6px; } .tpl-chips { flex: 1 1 0; min-width: 0; } .tpl-tools { flex: 0 0 auto; flex-wrap: nowrap; padding-top: 2px; } }
 
 /* 用戶版預覽 */
 .modebar { position: sticky; top: 0; z-index: 30; display: flex; gap: 14px; align-items: center; justify-content: space-between; flex-wrap: wrap;
@@ -878,7 +878,7 @@ html.phone #sync-line { display: none; }
 .tile-amt small { font-size: 13px; font-weight: 500; }
 
 /* iPhone keyboard: --kb is the height of the keyboard (0 when closed), set by keyboardGuard() in app.js */
-@media (max-width: 720px) {
+@media (max-width: 720px), (max-height: 500px) and (orientation: landscape) and (pointer: coarse) {
   html.kb-open dialog { margin-bottom: var(--kb, 0px); max-height: calc(100dvh - var(--kb, 0px) - 16px); padding-bottom: 0; }
   html.kb-open .dlg-body { max-height: calc(100dvh - var(--kb, 0px) - 150px); }
   html.kb-open .side { display: none; }
@@ -889,7 +889,7 @@ html.phone #sync-line { display: none; }
   background: var(--brass-wash); border: 1px solid var(--brass); font-size: 14px; line-height: 1.5; }
 
 /* smoother phone: the tab bar gets its own layer (no flicker while the page scrolls), long lists skip drawing rows off screen, and a page that is loading shows a thin line */
-@media (max-width: 720px) {
+@media (max-width: 720px), (max-height: 500px) and (orientation: landscape) and (pointer: coarse) {
   .side { transform: translateZ(0); -webkit-backface-visibility: hidden; backface-visibility: hidden; }
   .ledger.tx tr { content-visibility: auto; contain-intrinsic-size: auto 76px; }
 }
@@ -954,7 +954,7 @@ html.phone #sync-line { display: none; }
 .adv-selbar { position: sticky; top: 0; z-index: 5; display: flex; flex-wrap: wrap; align-items: center; gap: 8px 10px; padding: 10px 14px; margin: 0 0 12px; background: var(--surface); border-radius: 12px; box-shadow: var(--shadow); }
 .adv-selbar[hidden] { display: none; }
 .bill-pickall { display: inline-flex; align-items: center; gap: 4px; font-size: 14px; cursor: pointer; }
-@media (max-width: 720px) { .adv-row { grid-template-columns: auto minmax(0, 1fr) auto; } .adv-acts { grid-column: 2 / -1; } .adv-pays { grid-column: 2 / -1; } }
+@media (max-width: 720px), (max-height: 500px) and (orientation: landscape) and (pointer: coarse) { .adv-row { grid-template-columns: auto minmax(0, 1fr) auto; } .adv-acts { grid-column: 2 / -1; } .adv-pays { grid-column: 2 / -1; } }
 
 /* ---- record form: rarely used fields folded */
 .more-fields { grid-column: 1 / -1; border-top: 1px solid var(--line-2); padding-top: 4px; }
@@ -964,14 +964,14 @@ html.phone #sync-line { display: none; }
 .more-fields[open] > summary::before { transform: rotate(90deg); }
 .more-body { display: grid; gap: 12px; padding-bottom: 6px; }
 .ledger tr.picked td { box-shadow: none; }
-@media (max-width: 720px) { .main { padding-bottom: calc(150px + env(safe-area-inset-bottom)); } }       /* room under the last row for a message and the tab bar */
+@media (max-width: 720px), (max-height: 500px) and (orientation: landscape) and (pointer: coarse) { .main { padding-bottom: calc(150px + env(safe-area-inset-bottom)); } }       /* room under the last row for a message and the tab bar */
 .tpl-more { margin-left: auto; }
 .tpl-more > summary { cursor: pointer; font-size: 13.5px; color: var(--ink-2); padding: 6px 2px; list-style: none; white-space: nowrap; }
 .tpl-more > summary::-webkit-details-marker { display: none; }
 .tpl-more > summary::before { content: '▸'; display: inline-block; width: 1.1em; }
 .tpl-more[open] > summary::before { content: '▾'; }
 .tpl-more .tpl-tools { display: flex; margin: 4px 0 6px; padding-top: 0; }
-@media (max-width: 720px) { .tpl-more { margin-left: 0; } .tpl-more[open] { flex: 1 0 100%; } .tpl-more[open] .tpl-tools { gap: 8px 14px; } .tpl-bar { gap: 0 8px; } }
+@media (max-width: 720px), (max-height: 500px) and (orientation: landscape) and (pointer: coarse) { .tpl-more { margin-left: 0; } .tpl-more[open] { flex: 1 0 100%; } .tpl-more[open] .tpl-tools { gap: 8px 14px; } .tpl-bar { gap: 0 8px; } }
 
 /* ---- a transaction row opens its editor when tapped */
 .ledger.tx tbody tr.tx-row { cursor: pointer; }
@@ -986,7 +986,7 @@ html.phone #sync-line { display: none; }
 .inv-hist tr.tx-row, .inv-lot-table tr.tx-row { cursor: pointer; }
 .inv-hist tbody tr.tx-row:hover { background: color-mix(in srgb, var(--brass) 7%, transparent); }
 .t-side-inline { display: none; }
-@media (max-width: 720px) {
+@media (max-width: 720px), (max-height: 500px) and (orientation: landscape) and (pointer: coarse) {
   .ledger.stack.inv-hist tr { grid-template-columns: 38px repeat(6, minmax(0, 1fr)); gap: 6px 8px; align-items: start; padding: 10px 2px;
     grid-template-areas: "sel head head head head head head" ". sh sh px px amt amt" ". acct acct acct acct real real" ". when when when act act act"; }
   .ledger.stack.inv-hist td { grid-column: auto; min-width: 0; }
@@ -1015,7 +1015,7 @@ html.phone #sync-line { display: none; }
 .tpl-chip .tpl-name { overflow: hidden; text-overflow: ellipsis; white-space: nowrap; min-width: 0; }
 .tpl-chip { max-width: min(260px, 72vw); }
 label.row-inline { flex-wrap: nowrap; align-items: flex-start; }
-@media (max-width: 720px) {
+@media (max-width: 720px), (max-height: 500px) and (orientation: landscape) and (pointer: coarse) {
   .cal-in, .cal-out, .cal-nums .cal-net { font-size: 10.5px; }
   .tag-chip { min-height: 32px; display: inline-flex; align-items: center; }
   .tag-chip.sm { min-height: 0; display: inline; position: relative; }
@@ -1030,17 +1030,161 @@ label.row-inline { flex-wrap: nowrap; align-items: flex-start; }
   .cal-in, .cal-out, .cal-nums .cal-net { font-size: 10px; }
   .cal-cell { padding-left: 1px; padding-right: 1px; }
 }
-@media (max-width: 720px) {
+@media (max-width: 720px), (max-height: 500px) and (orientation: landscape) and (pointer: coarse) {
   label:has(> input[type="checkbox"]) { min-height: 32px; align-items: center; }
   .tpl-x { width: 30px; height: 30px; }
   .ledger.tx .note { min-width: 0; max-width: 100%; box-sizing: border-box; }
 }
 /* A phone dialog is a column: head and buttons keep their size, only the middle scrolls. (A fixed height for the middle let the buttons slide off the
    screen whenever they wrapped onto two rows on a narrow phone or the title was long.) */
-@media (max-width: 720px) {
+@media (max-width: 720px), (max-height: 500px) and (orientation: landscape) and (pointer: coarse) {
   dialog[open] { display: flex; flex-direction: column; }
   dialog[open] > form { display: flex; flex-direction: column; min-height: 0; flex: 1 1 auto; }
   dialog[open] > form > .dlg-head, dialog[open] > form > .dlg-foot { flex: 0 0 auto; }
   dialog[open] > form > .dlg-body, html.kb-open dialog[open] > form > .dlg-body { flex: 1 1 auto; min-height: 0; max-height: none; }
 }
-@media (max-width: 720px) { .rows { grid-template-columns: minmax(0, 1fr); } .rows > * { min-width: 0; } }       /* a form column never grows wider than the screen */
+@media (max-width: 720px), (max-height: 500px) and (orientation: landscape) and (pointer: coarse) { .rows { grid-template-columns: minmax(0, 1fr); } .rows > * { min-width: 0; } }       /* a form column never grows wider than the screen */
+
+/* ---- iPhone: notch / Dynamic Island sideways (landscape), the sheet in landscape, a roomier keyboard ---- */
+@media (max-width: 720px), (max-height: 500px) and (orientation: landscape) and (pointer: coarse) {
+  .main { padding-left: calc(14px + env(safe-area-inset-left)); padding-right: calc(14px + env(safe-area-inset-right)); }
+  .side { padding-left: env(safe-area-inset-left); padding-right: env(safe-area-inset-right); }
+  #toasts { left: calc(12px + env(safe-area-inset-left)); right: calc(12px + env(safe-area-inset-right)); }
+  .pw-toastbar { left: calc(12px + env(safe-area-inset-left)); right: calc(12px + env(safe-area-inset-right)); }
+  .dlg-head { padding-left: calc(16px + env(safe-area-inset-left)); padding-right: calc(16px + env(safe-area-inset-right)); }
+  .dlg-body { padding-left: calc(16px + env(safe-area-inset-left)); padding-right: calc(16px + env(safe-area-inset-right)); }
+  .dlg-foot { padding-left: calc(16px + env(safe-area-inset-left)); padding-right: calc(16px + env(safe-area-inset-right)); }
+  html.kb-open .dlg-head { padding-top: 10px; padding-bottom: 0; } html.kb-open .dlg-head h3 { font-size: 18px; }
+  html.kb-open .dlg-foot { padding-top: 8px; padding-bottom: 8px; }
+}
+@media (max-height: 500px) and (orientation: landscape) and (pointer: coarse) {
+  dialog, dialog.wide { width: min(100vw, 680px); max-width: 100vw; margin: auto auto 0; }          /* a sheet, but not as wide as the whole sideways screen */
+  .page-head { padding-top: 8px; } h1 { font-size: 22px; }
+  dialog[open] { max-height: 94dvh; }
+}
+@media (max-height: 500px) and (orientation: landscape) and (pointer: coarse) {
+  .nav a { flex-direction: row; gap: 6px; padding: 7px 0 6px; font-size: 12.5px; }          /* a sideways phone has little height: icon and name side by side keep the bar thin */
+  .nav a svg { width: 18px; height: 18px; }
+  .main { padding-bottom: calc(64px + env(safe-area-inset-bottom)); }
+  #toasts, .pw-toastbar { bottom: calc(52px + env(safe-area-inset-bottom)); }
+}
+
+/* the Google Sheets connection report */
+.sr { display: grid; gap: 10px; }
+.sr-line { display: grid; grid-template-columns: 20px 1fr; gap: 6px; align-items: start; line-height: 1.5; }
+.sr-line b { font-size: 16px; text-align: center; }
+.sr-pick { display: flex; flex-wrap: wrap; gap: 8px; align-items: center; padding-left: 26px; }
+
+/* 1.49.0 — the phone transactions page: the list first (filter button + tags, a + button), long lists drawn a window at a time, row swipes, skeletons */
+.fab { display: none; }
+.fchips { display: flex; flex-wrap: wrap; gap: 6px; margin: 8px 0 2px; }
+.fchip { display: inline-flex; align-items: center; gap: 6px; max-width: 100%; padding: 4px 6px 4px 12px; border: 1px solid var(--line); border-radius: 999px; background: var(--surface); color: var(--ink-2); font: inherit; font-size: 13.5px; cursor: pointer; }
+.fchip > span { min-width: 0; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.fchip b { flex: none; display: inline-grid; place-items: center; width: 22px; height: 22px; border-radius: 50%; background: var(--line-2); font-weight: 400; font-size: 15px; line-height: 1; }
+.fchip.clear { padding: 4px 12px; background: transparent; border-style: dashed; color: var(--ink-3); }
+tr.vs, tr.vs td { padding: 0; border: 0; background: none; }
+tr.vs td { display: block; width: 100%; }
+.ledger.tx.virt tbody { overflow-anchor: none; }
+.skeleton { padding-top: 18px; }
+.sk { display: block; border-radius: 6px; background: linear-gradient(90deg, var(--line-2) 25%, var(--line) 37%, var(--line-2) 63%); background-size: 400% 100%; animation: sk-shimmer 1.4s ease infinite; }
+@keyframes sk-shimmer { 0% { background-position: 100% 50%; } 100% { background-position: 0 50%; } }
+.sk-title { width: 36%; height: 30px; margin-bottom: 18px; }
+.sk-card { height: 120px; margin-bottom: 14px; border-radius: 10px; } .sk-card.tall { height: 170px; } .sk-card.short { height: 64px; }
+.sk-line { height: 14px; margin: 6px 0; } .sk-line.sm { height: 11px; }
+.sk-tiles { display: grid; grid-template-columns: repeat(auto-fill, minmax(96px, 1fr)); gap: 10px; } .sk-tile { height: 96px; border-radius: 12px; }
+.sk-list { display: block; }
+.sk-row { display: flex; align-items: center; gap: 12px; padding: 12px 2px; border-bottom: 1px solid var(--line-2); }
+.sk-dot { width: 36px; height: 36px; border-radius: 50%; flex: none; } .sk-lines { flex: 1; min-width: 0; }
+@media (prefers-reduced-motion: reduce) { .sk { animation: none; } }
+@media (max-width: 720px), (max-height: 500px) and (orientation: landscape) and (pointer: coarse) {
+  .tx-head { flex-wrap: nowrap; align-items: center; } .tx-head h1 { min-width: 0; }
+  .tx-head .btn { flex: none; min-height: 40px; padding: 6px 16px; }
+  .fab { display: grid; place-items: center; position: fixed; right: calc(16px + env(safe-area-inset-right)); bottom: calc(78px + env(safe-area-inset-bottom)); z-index: 25; width: 56px; height: 56px; padding: 0; border: 0; border-radius: 50%;
+    background: var(--primary); color: var(--on-primary); font: 300 38px/1 var(--sans); box-shadow: 0 6px 16px rgba(0, 0, 0, .28); cursor: pointer; }
+  .fab span { display: block; transform: translateY(-2px); }
+  .fab:active { transform: scale(.95); }
+  html.kb-open .fab { display: none; }
+  .tally { display: grid; grid-template-columns: repeat(2, minmax(0, 1fr)); gap: 6px 12px; padding: 10px 12px; }
+  .tally-val { font-size: 19px; } .tally-label { font-size: 12px; }
+  .tally-toggle, .tally-note { grid-column: 1 / -1; }
+  .period-bar { margin: 12px 0 8px; gap: 8px; }
+  .ledger.tx.virt tr, .ledger.tx.swipe tr { content-visibility: visible; contain-intrinsic-size: none; }
+  .ledger.tx.swipe tbody { overflow-x: clip; }
+  .ledger.tx tr.vs { display: block; padding: 0; margin: 0; border: 0; }
+  .ledger.tx tr.vs td { display: block; padding: 0; }
+  .ledger.tx tr.swipeable { position: relative; touch-action: pan-y; -webkit-user-select: none; user-select: none; }
+  .ledger.tx tr.swiping { will-change: transform; }
+  .sw-bg { position: absolute; top: 0; bottom: 0; display: flex; align-items: center; padding: 0 14px; overflow: hidden; white-space: nowrap; color: #fff; font-size: 15px; font-weight: 600; pointer-events: none; }
+  .sw-bg.del { left: 100%; justify-content: flex-start; background: var(--expense); }
+  .sw-bg.copy { right: 100%; justify-content: flex-end; background: var(--income); }
+  .sw-bg.armed { filter: brightness(1.12); }
+}
+@media (max-height: 500px) and (orientation: landscape) and (pointer: coarse) { .fab { bottom: calc(52px + env(safe-area-inset-bottom)); width: 48px; height: 48px; font-size: 32px; } }
+.swipe-hint { display: flex; align-items: center; gap: 8px; margin: 6px 0 0; padding: 6px 6px 6px 12px; border-radius: 8px; background: var(--brass-wash); font-size: 13px; color: var(--ink-2); }
+.swipe-hint span { flex: 1 1 auto; min-width: 0; }
+.tally-more > summary { cursor: pointer; font-size: 13px; color: var(--ink-3); padding: 2px 0; }
+.tally-more[open] > summary { margin-bottom: 4px; }
+@media (max-width: 720px), (max-height: 500px) and (orientation: landscape) and (pointer: coarse) {
+  .tally > .tally-more { grid-column: 1 / -1; }
+}
+
+/* 1.49.0 — accounts: net worth on top, one line per account */
+.net-card { display: flex; flex-wrap: wrap; align-items: flex-end; gap: 8px 28px; margin: 14px 0 0; padding: 14px 16px; background: var(--surface); border: 1px solid var(--line); border-left: 4px solid var(--brass); border-radius: 6px; }
+.net-main { display: flex; flex-direction: column; min-width: 0; }
+.net-main .big { font-family: var(--serif); font-weight: 500; font-size: 32px; line-height: 1.15; font-variant-numeric: tabular-nums; }
+.net-main .big small { font-family: var(--sans); font-size: 13px; margin-left: 6px; color: var(--ink-3); font-weight: 400; }
+.net-parts { display: flex; gap: 6px 22px; flex-wrap: wrap; }
+.net-parts > span { display: flex; flex-direction: column; }
+.net-parts b { font-weight: 500; font-size: 17px; font-variant-numeric: tabular-nums; }
+.net-note { flex: 1 0 100%; margin: 0; }
+.acc-list { display: block; border-top: 1px solid var(--line-2); }
+.acc-item { border-bottom: 1px solid var(--line-2); }
+.acc-item.archived { opacity: .7; }
+.acc-item > summary { list-style: none; display: flex; align-items: center; gap: 10px; min-height: 54px; padding: 6px 2px; cursor: pointer; }
+.acc-item > summary::-webkit-details-marker { display: none; }
+.acc-name { flex: 1 1 auto; min-width: 0; display: flex; align-items: center; gap: 8px; }
+.acc-title { min-width: 0; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; font-weight: 500; }
+.acc-bal { flex: none; font-variant-numeric: tabular-nums; font-size: 16.5px; text-align: right; }
+.acc-chev { flex: none; width: 14px; text-align: center; color: var(--ink-3); font-size: 18px; transition: transform .15s; }
+.acc-item[open] .acc-chev { transform: rotate(90deg); }
+.acc-more { padding: 2px 2px 14px 2px; }
+.acc-more dl { display: grid; grid-template-columns: repeat(3, minmax(0, 1fr)); gap: 8px; margin: 0 0 10px; }
+.acc-more dt { font-size: 12px; color: var(--ink-3); } .acc-more dd { margin: 2px 0 0; font-variant-numeric: tabular-nums; overflow-wrap: anywhere; }
+.acc-acts { display: flex; flex-wrap: wrap; gap: 8px; }
+@media (max-width: 720px), (max-height: 500px) and (orientation: landscape) and (pointer: coarse) {
+  .net-card { margin-top: 10px; padding: 12px 14px; } .net-main .big { font-size: 28px; }
+  .acc-list + .hint, .section + .hint { margin-top: 18px; }
+}
+@media (prefers-reduced-motion: reduce) { .acc-chev { transition: none; } }
+
+/* 1.49.0 — overview: total assets and this month's balance at the very top */
+.worth.top { padding-top: 22px; padding-bottom: 10px; gap: 12px 44px; align-items: flex-end; }
+.w-total, .w-month { display: flex; flex-direction: column; min-width: 0; }
+.w-month .label { color: var(--ink-3); font-size: 13px; }
+.w-net { font-family: var(--serif); font-weight: 500; font-size: 32px; line-height: 1.1; font-variant-numeric: tabular-nums; }
+.w-delta { font-size: 13.5px; color: var(--ink-3); margin-top: 2px; } .w-delta.pos { color: var(--income); } .w-delta.neg { color: var(--expense); } .w-delta b { font-weight: 600; }
+@media (max-width: 720px), (max-height: 500px) and (orientation: landscape) and (pointer: coarse) {
+  .worth.top { display: grid; grid-template-columns: minmax(0, 1fr) auto; gap: 10px 16px; padding: 10px 0 10px; align-items: end; border-bottom: 1px solid var(--line-2); margin-bottom: 8px; }
+  .worth.top .w-total { grid-column: 1 / -1; } .worth.top .big { font-size: 40px; }
+  .w-net { font-size: 24px; } .worth.top .month { gap: 4px 16px; padding-bottom: 0; flex-wrap: nowrap; } .worth.top .month b { font-size: 16px; }
+}
+
+/* 1.49.0 — settings: five folders and a search box */
+.set-search { margin: 10px 0 6px; position: sticky; top: env(safe-area-inset-top, 0px); z-index: 4; padding: 6px 0; background: var(--paper); }
+.set-search input { width: 100%; max-width: 520px; }
+.set-group { border-bottom: 1px solid var(--line); }
+.set-group > summary { list-style: none; display: flex; align-items: center; gap: 12px; min-height: 56px; padding: 10px 2px; cursor: pointer; }
+.set-group > summary::-webkit-details-marker { display: none; }
+.set-group > summary h2 { margin: 0; font-size: 19px; flex: 1 1 auto; }
+.set-n { color: var(--ink-3); font-size: 13px; }
+.set-chev { width: 14px; text-align: center; color: var(--ink-3); font-size: 20px; transition: transform .15s; }
+.set-group[open] > summary .set-chev { transform: rotate(90deg); }
+.set-body { padding: 0 0 14px; }
+.set-body > .section { margin-top: 18px; }
+.set-body > .section.dup-title > .section-head { display: none; }
+.set-body > .section:first-child { margin-top: 4px; }
+@media (prefers-reduced-motion: reduce) { .set-chev { transition: none; } }
+@media (max-width: 720px), (max-height: 500px) and (orientation: landscape) and (pointer: coarse) {
+  .ledger.tx .note { overflow-wrap: anywhere; }                     /* a long unbroken note (a link, a serial number) wraps instead of running past the edge */
+  .tally-more > summary { display: flex; align-items: center; min-height: 36px; }
+}

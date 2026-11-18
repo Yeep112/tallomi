@@ -4,10 +4,11 @@
 'use strict';
 
 // ---- add an entry in a dialog (type / category / day already chosen)
-function openQuickAdd({ type = 'expense', category = '', date = '' } = {}) {
+function openQuickAdd({ type = 'expense', category = '', date = '', seed = null, title: given = '' } = {}) {
   const first = activeAccounts()[0];
   const m = { type, account_id: S.entry.account_id || (first ? first.id : null), to_account_id: null, amount: '', to_amount: '', category, note: '', tags: pinnedTags(), time: '',
     advance: '', counterparty: '', due: '', no_budget: false, no_stats: false };
+  if (seed) Object.assign(m, seed, { time: '' });                    // "record it again": same fields, the time is now
   if (date) m.time = date === nowLocal().slice(0, 10) ? nowLocal().slice(0, 16) : `${date}T${nowLocal().slice(11, 16)}`;
   if (type === 'transfer') { const o = activeAccounts().find((a) => a.id != m.account_id); m.to_account_id = o ? o.id : null; }
   const holder = h('div', { class: 'rows', style: 'padding:0;max-width:none' });
@@ -16,9 +17,9 @@ function openQuickAdd({ type = 'expense', category = '', date = '' } = {}) {
     const a = holder.querySelector('input[name=amount]'); if (a && (focus || m.amount === '')) a.focus();
   };
   draw();
-  const title = `${date ? date.slice(5).replace('-', '/') + ' ' : ''}記一筆${category ? '：' + category : ''}`;
+  const title = given || `${date ? date.slice(5).replace('-', '/') + ' ' : ''}記一筆${category ? '：' + category : ''}`;
   openDialog({ title, wide: true, body: holder,
-    primary: { label: '記下', run: async () => { await recordEntry(m); await refresh(); } } });
+    primary: { label: '記下', run: async () => { const acctId = m.account_id; await recordEntry(m); S.entry.account_id = acctId; await refresh(); } } });
 }
 
 // ---- the tiles
