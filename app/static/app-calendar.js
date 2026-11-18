@@ -73,16 +73,18 @@ async function viewCalendar(view) {
       has ? h('span', { class: 'cal-dot', 'aria-hidden': 'true' }) : null));
   }
 
-  const picker = h('input', { type: 'month', value: `${c.y}-${String(c.m).padStart(2, '0')}`, 'aria-label': '跳到某個月', onchange: (e) => {
+  const picker = h('input', { class: 'cal-picker', tabindex: '-1', 'aria-hidden': 'true', type: 'month', value: `${c.y}-${String(c.m).padStart(2, '0')}`, 'aria-label': '跳到某個月', onchange: (e) => {
     const v = e.target.value; if (/^\d{4}-\d{2}$/.test(v)) { c.y = +v.slice(0, 4); c.m = +v.slice(5); c.sel = ''; renderRoute(); } } });
+  const intro = pageIntro('每一天標出當天的收入（綠）和支出（紅），兩者都有時再多一行淨額；點某一天就直接在那天記一筆支出，關掉視窗後下方會看到那天的明細；長按（電腦可按右鍵）則可選記收入或轉帳。');
   view.append(
-    h('div', { class: 'page-head' }, h('div', null, h('h1', null, '月曆', eyeButton('calendar')), h('p', { class: 'sub' }, '每一天標出當天的收入（綠）和支出（紅），兩者都有時再多一行淨額；點某一天就直接在那天記一筆支出，關掉視窗後下方會看到那天的明細；長按（電腦可按右鍵）則可選記收入或轉帳。'))),
+    h('div', { class: 'page-head' }, h('div', null, h('h1', null, '月曆', eyeButton('calendar'), intro.btn), intro.p)),
     h('div', { class: 'cal-top' },
-      h('div', { class: 'month-nav', role: 'group', 'aria-label': '切換月份' },
+      h('div', { class: 'month-nav cal-nav', role: 'group', 'aria-label': '切換月份' },
         h('button', { class: 'btn sm ghost', type: 'button', 'aria-label': '上一個月', onclick: () => go(-1) }, '‹'),
-        h('b', null, `${c.y} 年 ${c.m} 月`),
-        h('button', { class: 'btn sm ghost', type: 'button', 'aria-label': '下一個月', onclick: () => go(1) }, '›')),
-      h('span', { class: 'head-btns' }, picker, h('button', { class: 'btn sm', type: 'button', onclick: () => { const t = new Date(); c.y = t.getFullYear(); c.m = t.getMonth() + 1; c.sel = ymd(t); renderRoute(); } }, '今天'))),
+        h('button', { class: 'cal-title', type: 'button', title: '點一下跳到某個月', onclick: () => { try { picker.showPicker(); } catch (e) { picker.focus(); picker.click(); } } }, `${c.y} 年 ${c.m} 月`),
+        picker,
+        h('button', { class: 'btn sm ghost', type: 'button', 'aria-label': '下一個月', onclick: () => go(1) }, '›'),
+        h('button', { class: 'btn sm', type: 'button', onclick: () => { const t = new Date(); c.y = t.getFullYear(); c.m = t.getMonth() + 1; c.sel = ymd(t); renderRoute(); } }, '今天'))),
     h('div', { class: 'cal', role: 'group', 'aria-label': `${c.y} 年 ${c.m} 月` },
       h('div', { class: 'cal-week', 'aria-hidden': 'true' }, CAL_WEEK.map((w) => h('span', null, w))),
       h('div', { class: 'cal-grid' }, cells),
@@ -91,6 +93,18 @@ async function viewCalendar(view) {
         h('div', null, h('span', { class: 'muted' }, '支出'), h('b', { class: 'neg num' }, num(exp, base))),
         h('div', null, h('span', { class: 'muted' }, '結餘'), h('b', { class: 'num ' + (inc - exp >= 0 ? 'pos' : 'neg') }, num(inc - exp, base, true))))),
     transfersSwitch(S.st.prefs.count_transfers ? '已把轉帳算進來：轉出算支出、轉入算收入，每天的數字和上面的合計都含轉帳' : '轉帳不算收支，月曆只看收入和支出'));
+  // phone: slide the month grid left for the next month, right for the one before
+  const cal = view.querySelector('.cal');
+  if (cal && isPhone() && onTouch()) {
+    let st = null;
+    cal.addEventListener('pointerdown', (e) => { if (e.pointerType !== 'touch' || !e.isPrimary) return; const W = document.documentElement.clientWidth; st = (e.clientX < 22 || e.clientX > W - 22 || calEdge(e.clientX)) ? null : { x: e.clientX, y: e.clientY }; });
+    cal.addEventListener('pointerup', (e) => {
+      if (!st) return; const dx = e.clientX - st.x, dy = e.clientY - st.y; st = null;
+      if (Math.abs(dx) >= 60 && Math.abs(dx) > Math.abs(dy) * 1.6) { S.calSwiped = Date.now(); go(dx < 0 ? 1 : -1); }
+    });
+    cal.addEventListener('pointercancel', () => { st = null; });
+    cal.addEventListener('click', (e) => { if (Date.now() - (S.calSwiped || 0) < 400) { e.stopPropagation(); e.preventDefault(); } }, true);
+  }
   if (d.total > d.items.length) view.append(h('div', { class: 'hint' }, `這個月份的交易太多，月曆只列出最近的 ${d.items.length} 筆明細；每天的淨額仍然是完整的。`));
 
   if (c.sel) {

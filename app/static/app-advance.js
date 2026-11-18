@@ -121,8 +121,9 @@ async function viewAdvances(view) {
   const items = d.items.filter((x) => !kindF || x.advance === kindF);
   const bills = kindF === 'claim' ? [] : (d.bills || []);                  // split bills are always paid-for-friends
   const money1 = (list) => list.map((r) => `${num(r.amount, r.currency)} ${r.currency}`).join('、');
-  view.append(h('div', { class: 'page-head' }, h('div', null, h('h1', null, '代墊與報帳', eyeButton('advances')),
-    h('p', { class: 'sub' }, '幫朋友先付錢，或自己先墊、之後要報帳的花費，記在這裡追蹤。一桌人一起吃飯由你先付，按「分帳」一次記下每個人的份；對方還錢時按「收款」，選轉進哪個帳戶。報帳可以設預計收到款項的日期，到那天自動記成已收款。逾期會在這裡、總覽和左邊選單提醒。')),
+  const intro = pageIntro('幫朋友先付錢，或自己先墊、之後要報帳的花費，記在這裡追蹤。一桌人一起吃飯由你先付，按「分帳」一次記下每個人的份；對方還錢時按「收款」，選轉進哪個帳戶。報帳可以設預計收到款項的日期，到那天自動記成已收款。逾期會在這裡、總覽和左邊選單提醒。');
+  view.append(h('div', { class: 'page-head' }, h('div', null, h('h1', null, '代墊與報帳', eyeButton('advances'), intro.btn),
+    intro.p),
     h('div', { class: 'page-actions' }, h('button', { class: 'btn primary', type: 'button', onclick: () => openBillDialog({}) }, '＋ 分帳'))));
   if (tab === 'open') {
     const parties = d.by_party.filter((g) => !kindF || g.advance === kindF);
@@ -371,7 +372,7 @@ function templateBar(m, redraw) {
   const past = (S.st.frequent || []).filter((t) => t.type === m.type || !m.type);       // typed before: offered without saving anything
   const chip0 = (t) => h('button', { type: 'button', class: 'tpl-chip' + (t.auto ? ' auto' : ''),
     title: `${t.auto ? `記過 ${t.count} 次：` : ''}${t.name}：${TYPE_LABEL[t.type]}${t.category ? '　' + t.category : ''}${asksAmount(t) ? '　點一下會先問金額' : t.amount ? '　' + t.amount : ''}`,
-    onclick: () => useTemplate(m, t, redraw) }, t.type === 'expense' || t.type === 'income' ? catChip(t.category || '未分類', 'sm') : null, t.name, asksAmount(t) ? h('i', { class: 'ask' }, '問金額') : t.amount ? h('i', null, t.amount) : null);
+    onclick: () => useTemplate(m, t, redraw) }, t.type === 'expense' || t.type === 'income' ? catChip(t.category || '未分類', 'sm') : null, h('span', { class: 'tpl-name' }, t.name), asksAmount(t) ? h('i', { class: 'ask' }, '問金額') : t.amount ? h('i', null, t.amount) : null);
   const chip = (t) => !t.auto ? chip0(t) : h('span', { class: 'tpl-chip-wrap' }, chip0(t),
     h('button', { type: 'button', class: 'tpl-x', title: '不要再顯示這個', 'aria-label': `不要再顯示「${t.name}」`, onclick: async () => {
       try { await api('POST', '/api/frequent/hide', { key: t.key }); S.st.frequent = (S.st.frequent || []).filter((x) => x.key !== t.key); toast('不會再顯示這個；想找回來，到「管理」按「恢復全部」'); redraw(); } catch (e) { fail(e); }

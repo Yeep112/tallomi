@@ -1,13 +1,13 @@
 {
  "app": "pennyworth",
- "version": "1.57.0",
- "released": "2026-11-18",
- "zip": "Pennyworth-1.57.0.zip",
- "download": "Tallomi-1.57.0.zip",
- "sha256": "c06d9f739bdaaebc7e4f2d1cafaf211aad97ac25e5cb139ab8520a7269bb0b25",
- "size": 976871,
+ "version": "1.60.0",
+ "released": "2026-11-19",
+ "zip": "Pennyworth-1.60.0.zip",
+ "download": "Tallomi-1.60.0.zip",
+ "sha256": "c038ef5b7eee8db70951e1bb4459096bd67819b8aecc19e8a3c90d24a3bfa5ff",
+ "size": 999595,
  "notes": [
-  "下一頁從旁邊滑進來"
+  "淨資產走勢、快速記帳網址、持股報酬、首頁自訂"
  ],
  "min_version": "0",
  "manual": false,

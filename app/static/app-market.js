@@ -12,7 +12,7 @@ const MK_PAGE = 100;
 const mkRow = (a) => ({ code: a[0], name: a[1], market: a[2], kind: a[3], price: a[4], ch: a[5], open: a[6], high: a[7], low: a[8], vol: a[9],
   pct: a[4] != null && a[5] != null && a[4] - a[5] ? a[5] / (a[4] - a[5]) : null });
 const mkSigned = (v, digits = 2) => (v == null ? '—' : `${v > 0 ? '+' : v < 0 ? '−' : ''}${Math.abs(v).toFixed(digits)}`);
-const mkLots = (v) => (v ? new Intl.NumberFormat('zh-TW').format(Math.round(v / 1000)) : '0');
+const mkLots = (v) => (v ? numFmt(0, 3).format(Math.round(v / 1000)) : '0');
 const mkBadge = (r) => h('span', { class: 'mk-badge' + (r.kind === 'etf' ? ' etf' : '') }, r.kind === 'etf' ? 'ETF' : r.market === 'TPEx' ? '上櫃' : '上市');
 const mkDate = (iso) => (iso ? iso.replace(/-/g, '/') : '—');
 const mkTP = new Intl.DateTimeFormat('en-GB', { timeZone: 'Asia/Taipei', hour12: false, year: 'numeric', month: '2-digit', day: '2-digit', hour: '2-digit', minute: '2-digit' });

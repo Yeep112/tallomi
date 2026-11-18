@@ -4,21 +4,23 @@
 'use strict';
 
 // ---- add an entry in a dialog (type / category / day already chosen)
-function openQuickAdd({ type = 'expense', category = '', date = '' } = {}) {
+function openQuickAdd({ type = 'expense', category = '', date = '', seed = null, title: given = '' } = {}) {
   const first = activeAccounts()[0];
   const m = { type, account_id: S.entry.account_id || (first ? first.id : null), to_account_id: null, amount: '', to_amount: '', category, note: '', tags: pinnedTags(), time: '',
     advance: '', counterparty: '', due: '', no_budget: false, no_stats: false };
+  if (seed) Object.assign(m, seed, { time: '' });                    // "record it again": same fields, the time is now
   if (date) m.time = date === nowLocal().slice(0, 10) ? nowLocal().slice(0, 16) : `${date}T${nowLocal().slice(11, 16)}`;
-  if (type === 'transfer') { const o = activeAccounts().find((a) => a.id != m.account_id); m.to_account_id = o ? o.id : null; }
+  // a transfer starts on the first other account, unless the entry being repeated (or a quick-entry link) already names where it goes
+  if (type === 'transfer' && (!m.to_account_id || m.to_account_id == m.account_id)) { const o = activeAccounts().find((a) => a.id != m.account_id); m.to_account_id = o ? o.id : null; }
   const holder = h('div', { class: 'rows', style: 'padding:0;max-width:none' });
   const draw = (focus) => {
     holder.replaceChildren(templateBar(m, draw), h('div', { class: 'grid2' }, txFields(m, draw).map((f) => (f.classList && f.classList.contains('ccy-tag')) ? null : f).filter(Boolean)));
     const a = holder.querySelector('input[name=amount]'); if (a && (focus || m.amount === '')) a.focus();
   };
   draw();
-  const title = `${date ? date.slice(5).replace('-', '/') + ' ' : ''}記一筆${category ? '：' + category : ''}`;
+  const title = given || `${date ? date.slice(5).replace('-', '/') + ' ' : ''}記一筆${category ? '：' + category : ''}`;
   openDialog({ title, wide: true, body: holder,
-    primary: { label: '記下', run: async () => { await recordEntry(m); await refresh(); } } });
+    primary: { label: '記下', run: async () => { const acctId = m.account_id; await recordEntry(m); S.entry.account_id = acctId; await refresh(); } } });
 }
 
 // ---- the tiles
@@ -114,9 +116,17 @@ function tileBudget(name, kind, spent, base) {
       h('span', { class: 'tile-bar-track', 'aria-hidden': 'true' }, h('i', { style: `width:${Math.min(100, pct)}%` })),
       h('small', { class: 'num' }, `預算 ${num(cap, base)}`, h('em', null, ` · ${text}`))) };
 }
-function categoryTile(name, amount, kind, editing, base, spent) {
-  const l = catLook(name), pic = isPicture(l.icon), bud = tileBudget(name, kind, spent, base);
-  return h('button', { type: 'button', class: 'tile' + (editing ? ' editing' : '') + (bud ? ' has-bud ' + bud.tone : ''), style: pic ? '' : `--tile:${l.color}`, 'data-name': name,
+// A tile without a budget shows its share of the month's total instead: a thin bar and "占 23%".
+function tileShare(amount, total, kind) {
+  const a = Number(amount) || 0, t = Number(total) || 0;
+  if (!(a > 0) || !(t > 0)) return null;
+  const pct = a / t * 100, txt = pct < 1 ? '占 <1%' : `占 ${Math.round(pct)}%`;
+  return { label: `${TYPE_LABEL[kind]}占本月 ${pct < 1 ? '不到 1' : Math.round(pct)}%`,
+    el: h('span', { class: 'tile-bud share' }, h('span', { class: 'tile-bar-track', 'aria-hidden': 'true' }, h('i', { style: `width:${Math.max(3, Math.min(100, pct))}%` })), h('small', { class: 'num' }, txt)) };
+}
+function categoryTile(name, amount, kind, editing, base, spent, total) {
+  const l = catLook(name), pic = isPicture(l.icon), bud = tileBudget(name, kind, spent, base) || tileShare(amount, total, kind);
+  return h('button', { type: 'button', class: 'tile' + (editing ? ' editing' : '') + (bud && bud.tone ? ' has-bud ' + bud.tone : bud ? ' has-share' : ''), style: pic ? '' : `--tile:${l.color}`, 'data-name': name,
     'aria-label': editing ? `編輯類別「${name}」` : `${TYPE_LABEL[kind]}・${name}，本月 ${num(amount, base)}${bud ? '，' + bud.label : ''}，點一下記一筆`,
     onclick: () => {
       if (Date.now() - (S.tileDragAt || 0) < 400) return;                    // the click that ends a drag
@@ -166,7 +176,7 @@ async function overviewTiles() {
         h('span', null, `${TYPE_LABEL[kind]} `, h('b', { class: 'num ' + (kind === 'income' ? 'pos' : 'neg') }, num(g.total, base)), h('small', { class: 'muted' }, ` ${base}`)),
         h('span', { class: 'tile-chev', 'aria-hidden': 'true' }, shut ? '▸' : '▾')),
       shut ? null : h('div', { class: 'tile-grid', 'data-kind': kind },
-        tileOrder(names, info.usage, kind, (S.st.prefs.tile_order || {})[kind] || []).map((c) => categoryTile(c, by[c] || 0, kind, o.edit, base, (d.budget_spent || {})[c] || 0)),
+        tileOrder(names, info.usage, kind, (S.st.prefs.tile_order || {})[kind] || []).map((c) => categoryTile(c, by[c] || 0, kind, o.edit, base, (d.budget_spent || {})[c] || 0, g.total)),
         h('button', { type: 'button', class: 'tile add', 'aria-label': `新增${TYPE_LABEL[kind]}類別`, onclick: () => addCategoryDialog(kind) }, h('span', { class: 'tile-plus', 'aria-hidden': 'true' }, '＋'), h('span', { class: 'tile-name' }, '新增類別'))));
   };
   const root = h('div', { class: 'tiles' },

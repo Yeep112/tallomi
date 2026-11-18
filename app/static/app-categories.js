@@ -93,9 +93,9 @@ async function viewCategories(view) {
         h('button', { class: 'btn sm ghost', type: 'button', onclick: () => openCategoryRename(c) }, '改名／合併'),
         h('button', { class: 'btn sm ghost', type: 'button', onclick: () => deleteCategory(c) }, '刪除')));
   };
+  const intro = pageIntro('記帳時的類別選單會依「支出」或「收入」只列出對應的類別，選單底下也能切到「全部」。在這裡可以先建好類別、改名、合併或刪除；刪除不會讓紀錄消失，只是改成「未分類」。');
   view.append(
-    h('div', { class: 'page-head' }, h('div', null, h('h1', null, '類別'),
-      h('p', { class: 'sub' }, '記帳時的類別選單會依「支出」或「收入」只列出對應的類別，選單底下也能切到「全部」。在這裡可以先建好類別、改名、合併或刪除；刪除不會讓紀錄消失，只是改成「未分類」。'))),
+    h('div', { class: 'page-head' }, h('div', null, h('h1', null, '類別', intro.btn), intro.p)),
     h('section', { class: 'section' }, add),
     h('section', { class: 'section' }, h('div', { class: 'section-head' }, h('h2', null, tab === 'all' ? '全部類別' : `${CAT_KIND_LABEL[tab]}類別`), tabs),
       list.length ? h('ul', { class: 'cm-rows' }, list.map(row)) : h('div', { class: 'empty' }, h('b', null, '還沒有類別'), '在上面輸入名稱新增，或直接記一筆收支，類別就會出現在這裡。')));

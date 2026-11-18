@@ -25,7 +25,7 @@ async function settingsPhone(view) {
       catch (er) { fail(er); e.target.checked = !e.target.checked; }
     } }), h('span', null, h('b', null, '允許手機連線'), info.enabled ? '（程式開著、電腦開機時手機才連得上）' : '')));
     if (info.enabled) {
-      const urlIn = h('input', { value: info.url || '', placeholder: '例如 https://my-pc.tail1234.ts.net', 'aria-label': '手機要開的網址', autocomplete: 'off', spellcheck: 'false', style: 'min-width:300px' });
+      const urlIn = h('input', { value: info.url || '', placeholder: '例如 https://my-pc.tail1234.ts.net', 'aria-label': '手機要開的網址', autocomplete: 'off', spellcheck: 'false', style: 'min-width:min(300px,100%)' });
       urlIn.addEventListener('change', async () => { try { info = await api('PUT', '/api/remote', { url: urlIn.value }); toast('已儲存網址'); paint(); } catch (er) { fail(er); } });
       kids.push(h('label', { class: 'field' }, h('span', null, '手機要開的網址'), urlIn,
         h('span', { class: 'hint' }, '執行 enable_phone_access.bat 後會顯示這個網址，貼在這裡就能產生 QR code（只存在這台電腦）。')));
