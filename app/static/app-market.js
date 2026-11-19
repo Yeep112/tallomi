@@ -15,9 +15,10 @@ const mkSigned = (v, digits = 2) => (v == null ? '—' : `${v > 0 ? '+' : v < 0 
 const mkLots = (v) => (v ? numFmt(0, 3).format(Math.round(v / 1000)) : '0');
 const mkBadge = (r) => h('span', { class: 'mk-badge' + (r.kind === 'etf' ? ' etf' : '') }, r.kind === 'etf' ? 'ETF' : r.market === 'TPEx' ? '上櫃' : '上市');
 const mkDate = (iso) => (iso ? iso.replace(/-/g, '/') : '—');
-const mkTP = new Intl.DateTimeFormat('en-GB', { timeZone: 'Asia/Taipei', hour12: false, year: 'numeric', month: '2-digit', day: '2-digit', hour: '2-digit', minute: '2-digit' });
+let mkTPf = null;                                     // built on first use: creating a time-zone formatter is the slowest thing the page's scripts do at start-up (about 100 ms on a phone)
+const mkTP = () => mkTPf || (mkTPf = new Intl.DateTimeFormat('en-GB', { timeZone: 'Asia/Taipei', hour12: false, year: 'numeric', month: '2-digit', day: '2-digit', hour: '2-digit', minute: '2-digit' }));
 function mkWhen(ts, mode) {                         // mode: 'hm' | 'mdhm' | 'md' | 'ym' | 'date' | 'full'
-  const p = Object.fromEntries(mkTP.formatToParts(new Date(ts * 1000)).map((x) => [x.type, x.value]));
+  const p = Object.fromEntries(mkTP().formatToParts(new Date(ts * 1000)).map((x) => [x.type, x.value]));
   const hm = `${p.hour === '24' ? '00' : p.hour}:${p.minute}`;
   return mode === 'hm' ? hm : mode === 'mdhm' ? `${p.month}/${p.day} ${hm}` : mode === 'md' ? `${p.month}/${p.day}` : mode === 'ym' ? `${p.year}/${p.month}` : mode === 'date' ? `${p.year}/${p.month}/${p.day}` : `${p.year}/${p.month}/${p.day} ${hm}`;
 }

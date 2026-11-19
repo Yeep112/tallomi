@@ -93,6 +93,11 @@ async function api(method, path, body, isForm) {
   return typeof offlineOn === 'function' && offlineOn() ? offlineApi(method, path, body, isForm) : apiNet(method, path, body, isForm);
 }
 async function apiNet(method, path, body, isForm) {
+  if (method === 'GET') {                              // an answer asked ahead (app-prefetch.js) is used if it is still good; the question is also noted so the page's next visit can ask ahead
+    pfNote(path);
+    const ahead = await pfTake(path);
+    if (ahead) return ahead.data;
+  } else if (pfAsked.size) pfAsked.clear();            // a change is on its way: nothing asked before it may be used
   const opt = { method, headers: { 'X-Pennyworth': '1' } };
   if (body !== undefined && !isForm) { opt.headers['Content-Type'] = 'application/json'; opt.body = JSON.stringify(body); }
   if (isForm) opt.body = body;
@@ -312,7 +317,8 @@ function pageIntro(text) {
 }
 
 async function refresh() {
-  S.st = await api('GET', '/api/state');
+  pfRoute(currentRoute());                             // the page's own questions leave now, together with the one for the state (not one after the other)
+  S.st = (await pfState()) || await api('GET', '/api/state');
   S.lastRefresh = Date.now(); S.day = nowLocal().slice(0, 10);
   if (typeof offlineSync === 'function') await offlineSync();
   if (!S.prefsApplied && S.st.prefs) { S.prefsApplied = true; applyPrefs(S.st.prefs); }
@@ -410,7 +416,8 @@ const calEdge = (x) => x < CAL_EDGE || x > document.documentElement.clientWidth 
 function pageSwipeSkip(t, x) {
   if (!t || !t.closest) return true;
   if (t.closest('.cal') && !calEdge(x)) return true;
-  if (t.closest('dialog, input, select, textarea, canvas, .swipeable, .nav, .no-page-swipe, [draggable=true], .tile.lifted, .tpl-row, .kb, summary')) return true;
+  if (t.closest('.swipeable') && !calEdge(x)) return true;           // 1.60.1: a row with swipe actions keeps its own slide, except near the two sides of the screen, where a slide changes page
+  if (t.closest('dialog, input, select, textarea, canvas, .nav, .no-page-swipe, [draggable=true], .tile.lifted, .tpl-row, .kb, summary')) return true;
   for (let n = t; n && n !== document.body; n = n.parentElement) {
     if (n.scrollWidth > n.clientWidth + 2) { const ox = getComputedStyle(n).overflowX; if (ox === 'auto' || ox === 'scroll') return true; }
   }
@@ -502,6 +509,17 @@ function pageSwipeTarget(dir, nav) {
   document.addEventListener('pointercancel', () => { if (st && st.on) { const v = view(); v.style.opacity = ''; v.style.willChange = ''; if (hint) { hint.remove(); hint = null; } peekFor(0, null); spring(v); } st = null; });
   document.addEventListener('click', (e) => { if (Date.now() - (S.pageSwiped || 0) < 400) { e.stopPropagation(); e.preventDefault(); } }, true);
 }
+// 1.60.1 — tapping the menu icon of the page you are already on (a second tap on the same icon) takes it back to the top.
+let iconTopUntil = 0;
+document.addEventListener('click', (e) => {
+  const a = e.target && e.target.closest ? e.target.closest('.nav a[data-route], .side a[data-route]') : null;
+  if (!a || a.dataset.route !== S.route || document.querySelector('dialog[open]')) return;
+  e.preventDefault();
+  if (window.scrollY < 2) return;
+  iconTopUntil = Date.now() + 900;
+  const calm = window.matchMedia && matchMedia('(prefers-reduced-motion: reduce)').matches;
+  window.scrollTo({ top: 0, behavior: calm ? 'auto' : 'smooth' });
+});
 // The new page's name, shown at the top for a moment, so a quick run of swipes never loses the way.
 function pageNameToast(route) {
   const a = document.querySelector(`.nav a[data-route="${route}"]`); if (!a) return;
@@ -543,7 +561,7 @@ async function renderRoute() {
   const oldCharts = S.charts; S.charts = [];
   const stage = await buildStage(route, my, false);
   if (!stage) return;                                          // the person moved on to another page meanwhile
-  const y = window.scrollY;
+  const y = Date.now() < iconTopUntil ? 0 : window.scrollY;   // a tap on the page's own icon is taking it to the top: a refresh landing meanwhile must not undo that
   oldCharts.forEach((c) => c.destroy());
   if (stage.failed) view.replaceChildren(h('div', { class: 'empty' }, h('b', null, '畫面載入失敗'), stage.failed.message));
   else view.replaceChildren(...stage.childNodes);
@@ -559,7 +577,9 @@ async function buildStage(route, my, first) {
   stage.style.cssText = `position:absolute;left:0;top:0;width:${view.clientWidth}px;visibility:hidden;pointer-events:none`;
   view.parentNode.appendChild(stage);
   let failed = null;
+  const learning = pfBegin();                          // which questions this page asks the computer (app-prefetch.js asks them ahead next time)
   try { await ROUTES[route](stage); } catch (e) { failed = e; }
+  pfEnd(route, learning, !failed && my === S.renderSeq);
   if (my !== S.renderSeq) { stage.remove(); return null; }
   if (failed) { stage.failed = failed; if (first) { stage.replaceChildren(h('div', { class: 'empty' }, h('b', null, '畫面載入失敗'), failed.message)); } }
   return stage;
@@ -569,7 +589,7 @@ function afterShown() {
   virtualRefresh();
   if (S.afterShow) { const f = S.afterShow; S.afterShow = null; setTimeout(f, 30); }
 }
-window.addEventListener('hashchange', renderRoute);
+window.addEventListener('hashchange', () => { pfRoute(currentRoute()); renderRoute(); });     // moving to another page: its questions leave before the skeleton is even drawn
 // Moving between pages does not pile up "previous pages": the overview stays as the one page Back returns to, and going from one page to
 // another replaces the current history entry instead of adding one. (Ctrl/⌘-click, middle click and links that open elsewhere behave as usual.)
 let homeBelow = false;                                   // the overview is the entry just below this one
@@ -977,13 +997,14 @@ function txTable(items, withBalance = true, viewer = null, sel = null, days = nu
   const dayOf = (t) => t.time.slice(0, 10);
   const swipeCls = isPhone() && onTouch() ? ' swipe' : '';
   if (days && typeof virtualBody === 'function' && items.length >= VIRTUAL_MIN) {         // thousands of lines: only the ones near the screen exist
-    const entries = () => { const out = []; let last = ''; for (const t of items) { const d = dayOf(t); if (d !== last) { out.push({ key: 'd' + d, kind: 'day', day: d }); last = d; } if (!days.folded.has(d)) out.push({ key: 't' + t.id, kind: 'tx', t }); } return out; };
+    const entries = () => { const out = []; let last = ''; for (const t of items) { const d = dayOf(t); if (d !== last) { out.push({ key: 'd' + d, kind: 'day', day: d, folded: days.folded.has(d) }); last = d; } if (!days.folded.has(d)) out.push({ key: 't' + t.id, kind: 'tx', t }); } return out; };
     const tbody = h('tbody'); let v;
     const flip = (key) => { if (days.folded.has(key)) days.folded.delete(key); else days.folded.add(key); v.setEntries(entries()); const b = tbody.querySelector(`tr[data-day="${key}"] .day-toggle`); if (b) b.focus({ preventScroll: true }); };
     const table = h('table', { class: 'ledger tx virt' + swipeCls }, head, tbody);
     v = virtualBody(tbody, entries(), (e) => e.kind === 'day' ? dayHeadRow(days.map[e.day], e.day, days.base, cols, days.folded.has(e.day), flip) : txRowEl(e.t, withBalance, viewer, sel, null),
       { cols, estimate: isPhone() ? { day: 46, tx: 92 } : { day: 40, tx: 44 } });
     table._virt = v;
+    table._update = (nextItems, nextDays) => { items = nextItems; days = nextDays; v.setEntries(entries()); };      // more lines arrived or days were folded: the lines already drawn stay
     return table;
   }
   return h('table', { class: 'ledger tx' + swipeCls }, head,
@@ -1065,7 +1086,7 @@ async function viewTransactions(view) {
   const selBox = h('div');
   let timer, shown = [];
   const paintBar = () => { selBox.replaceChildren(...(S.sel.size ? [selectionBar(shown, (full) => { if (full) paintList(); else paintBar(); })] : [])); };
-  const paintList = (r) => {
+  const paintList = (r, keep) => {                                     // keep: the same list got longer or days were folded, so the table already drawn is updated instead of made again
     if (r) listBox._r = r;
     r = listBox._r; if (!r) return;
     const base = r.totals.base;
@@ -1084,6 +1105,13 @@ async function viewTransactions(view) {
     const live = new Set(shown.map((t) => t.id));
     S.sel.forEach((id) => { if (!live.has(id)) S.sel.delete(id); });       // a filter hid it: it is no longer selected
     const days = { base, folded: f.folded, map: Object.fromEntries((r.groups || []).map((g) => [g.key, g])) };
+    const drawn = keep && listBox.children.length === 2 ? listBox.children[0] : null;
+    if (drawn && drawn._update && r.items.length >= VIRTUAL_MIN) {
+      drawn._update(r.items, days);
+      listBox.children[1].replaceWith(moreBox(r));
+      paintBar();
+      return;
+    }
     const table = txTable(r.items, true, f.account_id, { changed: paintBar }, days);
     listBox.replaceChildren(table, moreBox(r));
     if (table._virt) table._virt.refresh();
@@ -1104,7 +1132,7 @@ async function viewTransactions(view) {
       if (!fresh.length) r0.exhausted = true;                           // nothing new came: stop asking by itself (the button still works)
       r0.items = r0.items.concat(fresh);
       r0.groups = (r0.groups || []).concat((r.groups || []).filter((g) => !keys.has(g.key)));
-      paintList(r0);
+      paintList(r0, true);
     } catch (e) { fail(e); } finally { loadingMore = false; }
   };
   const moreBox = (r) => {
@@ -1134,8 +1162,8 @@ async function viewTransactions(view) {
   view.append(h('div', { class: 'period-bar' },
     periodSwitch(f.group, (k) => { f.group = k; f.back = null; f.limit = TX_PAGE; renderRoute(); }),
     f.group === 'day' ? h('span', { class: 'fold-btns' },
-      h('button', { class: 'btn sm ghost', type: 'button', onclick: () => { const r = listBox._r; if (r) { (r.groups || []).forEach((g) => f.folded.add(g.key)); paintList(); } } }, '全部收合'),
-      h('button', { class: 'btn sm ghost', type: 'button', onclick: () => { f.folded.clear(); paintList(); } }, '全部展開')) : null,
+      h('button', { class: 'btn sm ghost', type: 'button', onclick: () => { const r = listBox._r; if (r) { (r.groups || []).forEach((g) => f.folded.add(g.key)); paintList(undefined, true); } } }, '全部收合'),
+      h('button', { class: 'btn sm ghost', type: 'button', onclick: () => { f.folded.clear(); paintList(undefined, true); } }, '全部展開')) : null,
     f.back ? h('button', { class: 'btn ghost', type: 'button', onclick: () => {
       const b = f.back; Object.assign(f, { group: b.group, from: b.from, to: b.to, back: null, limit: TX_PAGE }); renderRoute();
     } }, `‹ 返回按${f.back.group === 'year' ? '年' : '月'}`) : null));

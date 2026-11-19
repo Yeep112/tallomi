@@ -1316,6 +1316,7 @@ tr.vs td { display: block; width: 100%; }
 @media (prefers-reduced-motion: reduce) { #view.slide-l, #view.slide-r { animation: none; } }
 @media (max-width: 720px), (max-height: 500px) and (orientation: landscape) and (pointer: coarse) {
   #view { touch-action: pan-y pinch-zoom; }          /* a sideways slide reaches the page-swipe instead of being taken by the browser */
+  :where(#view) * { touch-action: pan-y pinch-zoom; }  /* 1.60.1: set on every child too (zero specificity, so any class rule still wins) — on some pages the browser cancelled the touch stream on the first sideways move because a child fell back to auto, and the page never changed */
 }
 /* 1.54.0 — the name of the page just swiped to */
 .page-pill { position: fixed; top: calc(10px + env(safe-area-inset-top)); left: 50%; transform: translateX(-50%); z-index: 60; padding: 6px 16px; border-radius: 999px; background: rgba(20, 28, 44, .88); color: #fff; font-size: 14px; font-weight: 500; pointer-events: none; animation: pill-in .16s ease-out; transition: opacity .3s; }

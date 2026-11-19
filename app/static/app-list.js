@@ -10,6 +10,9 @@
 let activeVirtual = null;                                   // the one windowed list on screen (the transactions page)
 function virtualRefresh() { if (activeVirtual) activeVirtual.refresh(); }
 
+// Two entries draw the same row when they have the same key and the same content (the line itself, or a day header and whether it is folded).
+const sameEntry = (a, b) => !!a && !!b && a.key === b.key && a.kind === b.kind && a.t === b.t && a.day === b.day && a.folded === b.folded;
+
 // tbody: the <tbody> to fill. entries: [{ key, kind }] in page order. makeRow(entry) builds one <tr>.
 // Spacer rows above and below stand in for the rows that are not drawn, so the scrollbar and the page height stay right.
 function virtualBody(tbody, entries, makeRow, { cols = 1, estimate = { day: 44, tx: 60 }, buffer = 700 } = {}) {
@@ -99,16 +102,29 @@ function virtualBody(tbody, entries, makeRow, { cols = 1, estimate = { day: 44, 
 
   const api = {
     refresh: () => paint(false),
-    // the list changed (a day was folded, more rows arrived): keep the entry at the top of the screen where it is
+    // the list changed (a day was folded, more rows arrived): keep the entry at the top of the screen where it is.
+    // Rows that are drawn and whose entry did not change stay in the page as they are; only the rows that changed (or are new in between) are made again.
     setEntries(next) {
+      const has = new Map(next.map((e, i) => [e.key, i]));
       let anchor = null;
       if (tbody.isConnected && list.length) {
-        const y = offsetY(), at = find(Math.max(0, y)), has = new Map(next.map((e, i) => [e.key, i]));
+        const y = offsetY(), at = find(Math.max(0, y));
         let j = at; while (j > 0 && !has.has(list[j].key)) j--;        // the row itself may be gone (its day was folded): use the nearest one before it
         anchor = { index: has.has(list[j].key) ? has.get(list[j].key) : 0, offset: cum[j] - y };
       }
-      live.splice(0).forEach((it) => it.tr.remove());
+      const keep = [];                                                 // drawn rows that stay, in page order, with their place in the new list
+      let prevI = -1;
+      for (const it of live.splice(0)) {
+        const ni = has.get(it.key);
+        if (ni !== undefined && ni > prevI && sameEntry(list[it.i], next[ni])) { keep.push({ i: ni, key: it.key, tr: it.tr }); prevI = ni; }
+        else it.tr.remove();
+      }
       list = next; recompute();
+      for (let k = 0; k < keep.length; k++) {                          // between two kept rows the lines that are new (or changed) are made; a long stretch is left to the normal drawing
+        if (k && keep[k].i - keep[k - 1].i > 31) { for (const it of keep.splice(k)) it.tr.remove(); break; }
+        if (k) { let prevTr = keep[k - 1].tr; for (let i = keep[k - 1].i + 1; i < keep[k].i; i++) { const it = place(i); prevTr.after(it.tr); prevTr = it.tr; live.push(it); } }
+        live.push(keep[k]);
+      }
       paint(true, anchor);
     },
     dispose() { disposed = true; window.removeEventListener('scroll', onScroll); window.removeEventListener('resize', onResize); if (raf) cancelAnimationFrame(raf); if (activeVirtual === api) activeVirtual = null; },
@@ -136,8 +152,7 @@ function enableSwipe(tr, { onLeft, onRight, leftLabel = '刪除', rightLabel = '
   tr.addEventListener('pointerdown', (e) => {
     if (e.pointerType !== 'touch' || !e.isPrimary) return;
     if (e.target.closest('input, select, textarea, a, summary')) return;
-    const W = document.documentElement.clientWidth;
-    if (e.clientX < 22 || e.clientX > W - 22) return;        // the screen's edges belong to the system's own swipe-back
+    if (calEdge(e.clientX)) return;                          // the two sides of the screen belong to the page swipe (and the system's own swipe-back)
     clearTimeout(reset); tr.style.transition = '';
     st = { x: e.clientX, y: e.clientY, id: e.pointerId, dx: 0, on: false };
   });
