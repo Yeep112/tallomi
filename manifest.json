@@ -1,13 +1,13 @@
 {
  "app": "pennyworth",
- "version": "1.61.0",
+ "version": "1.64.0",
  "released": "2026-11-20",
- "zip": "Pennyworth-1.61.0.zip",
- "download": "Tallomi-1.61.0.zip",
- "sha256": "a53e06dafc254efeb7c0d1bb156595235b5a42b5f663ee103697bf838faff001",
- "size": 1006030,
+ "zip": "Pennyworth-1.64.0.zip",
+ "download": "Tallomi-1.64.0.zip",
+ "sha256": "eff219d1ba497e53ff7dbdc93bfe6779862594530ec1732f7ca06ed0267b41e5",
+ "size": 1040617,
  "notes": [
-  "順暢度大幅優化：伺服器記住算好的結果、頁面提早要資料、長列表不再整張重做"
+  "電腦沒開時圖示與功能補齊、本機模式可新增帳戶／類別／範本、定期交易手機先記、交易列表鍵盤操作"
  ],
  "min_version": "0",
  "manual": false,

@@ -97,7 +97,7 @@ async function viewCalendar(view) {
   const cal = view.querySelector('.cal');
   if (cal && isPhone() && onTouch()) {
     let st = null;
-    cal.addEventListener('pointerdown', (e) => { if (e.pointerType !== 'touch' || !e.isPrimary) return; const W = document.documentElement.clientWidth; st = (e.clientX < 22 || e.clientX > W - 22) ? null : { x: e.clientX, y: e.clientY }; });
+    cal.addEventListener('pointerdown', (e) => { if (e.pointerType !== 'touch' || !e.isPrimary) return; const W = document.documentElement.clientWidth; st = (e.clientX < 22 || e.clientX > W - 22 || calEdge(e.clientX)) ? null : { x: e.clientX, y: e.clientY }; });
     cal.addEventListener('pointerup', (e) => {
       if (!st) return; const dx = e.clientX - st.x, dy = e.clientY - st.y; st = null;
       if (Math.abs(dx) >= 60 && Math.abs(dx) > Math.abs(dy) * 1.6) { S.calSwiped = Date.now(); go(dx < 0 ? 1 : -1); }

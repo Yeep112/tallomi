@@ -43,7 +43,15 @@ function num(v, ccy, sign, force) {
   if (isHidden() && !force) return HIDDEN;
   const d = digits(ccy || 'TWD');
   const min = NO_CENTS.has(ccy) && Number.isInteger(v) ? 0 : d;
-  return new Intl.NumberFormat('zh-TW', { minimumFractionDigits: min, maximumFractionDigits: d, signDisplay: sign ? 'exceptZero' : 'auto' }).format(v).replace('-', '−');
+  return numFmt(min, d, sign).format(v).replace('-', '−');
+}
+// Building an Intl.NumberFormat is slow (tens of microseconds, several times that on a phone) and a page shows hundreds of amounts: one formatter per (digits, sign) is kept.
+const numFmts = new Map();
+function numFmt(min, max, sign, locale = 'zh-TW') {
+  const k = `${locale}|${min}|${max}|${sign ? 1 : 0}`;
+  let f = numFmts.get(k);
+  if (!f) { f = new Intl.NumberFormat(locale, { minimumFractionDigits: min, maximumFractionDigits: max, ...(sign ? { signDisplay: 'exceptZero' } : {}) }); numFmts.set(k, f); }
+  return f;
 }
 function money(v, ccy, { sign = false, tone = false, tag = true } = {}) {
   const cls = 'num' + (tone ? (v > 0 ? ' pos' : v < 0 ? ' neg' : '') : '');
@@ -69,27 +77,59 @@ function svg(...shapes) {
   }
   return el;
 }
-const css = (name) => getComputedStyle(document.documentElement).getPropertyValue(name).trim();
+// A colour of the current theme (charts ask for several on every draw). The answer is kept until the theme's own inline style
+// (see theme.js) or the page's classes change, so drawing a chart no longer forces a style lookup per colour.
+const cssMemo = { key: null, vals: new Map() };
+const css = (name) => {
+  const el = document.documentElement, key = (el.getAttribute('style') || '') + '|' + el.className;
+  if (cssMemo.key !== key) { cssMemo.key = key; cssMemo.vals.clear(); }
+  let v = cssMemo.vals.get(name);
+  if (v === undefined) { v = getComputedStyle(el).getPropertyValue(name).trim(); if (v) cssMemo.vals.set(name, v); }
+  return v;
+};
 
 // With offline mode on (paired phone only) reads fall back to the copy kept on the phone and new entries wait in a queue; see app-offline.js.
 async function api(method, path, body, isForm) {
-  return typeof offlineOn === 'function' && offlineOn() ? offlineApi(method, path, body, isForm) : apiNet(method, path, body, isForm);
+  if (typeof offlineOn === 'function' && offlineOn()) return offlineApi(method, path, body, isForm);
+  return typeof locGuard === 'function' ? locGuard(method, path, body, isForm) : apiNet(method, path, body, isForm);     // 1.63.0: with 電腦沒開也能用 on, a computer that does not answer is replaced by the phone's own copy (app-local.js)
 }
+// 1.62.0 — the same question asked twice at the same moment (the Settings page's status panel and its backup list both ask for the backups)
+// is sent once; the second asker gets its own copy of the answer. Any change that starts clears the list, so nothing read before a change is reused after it.
+const inflightGets = new Map();
 async function apiNet(method, path, body, isForm) {
+  if (method !== 'GET') { inflightGets.clear(); return apiNetGo(method, path, body, isForm); }
+  const f = inflightGets.get(path);
+  if (f) { pfNote(path); return f.then((d) => (d && typeof d === 'object' ? JSON.parse(JSON.stringify(d)) : d)); }
+  const p = apiNetGo(method, path, body, isForm); inflightGets.set(path, p);
+  const done = () => { if (inflightGets.get(path) === p) inflightGets.delete(path); };
+  p.then(done, done);
+  return p;
+}
+async function apiNetGo(method, path, body, isForm) {
+  if (method === 'GET') {                              // an answer asked ahead (app-prefetch.js) is used if it is still good; the question is also noted so the page's next visit can ask ahead
+    pfNote(path);
+    const ahead = await pfTake(path);
+    if (ahead) return ahead.data;
+  } else if (pfAsked.size) pfAsked.clear();            // a change is on its way: nothing asked before it may be used
   const opt = { method, headers: { 'X-Pennyworth': '1' } };
   if (body !== undefined && !isForm) { opt.headers['Content-Type'] = 'application/json'; opt.body = JSON.stringify(body); }
   if (isForm) opt.body = body;
   let r;
   const remote = (S.st && S.st.remote) || (typeof offlineOn === 'function' && offlineOn());
   const gone = () => { const err = new Error(remote ? '連不上你的電腦：請確認電腦開機、Tallomi 正在執行、手機的 Tailscale 已開啟。' : '無法連線到 Tallomi 本機服務，程式可能已關閉。'); err.network = true; return err; };
-  try { r = await fetch(path, opt); } catch { throw gone(); }
+  let guard = null;
+  if (typeof locOn === 'function' && locOn() && LOC.mode === 'pc' && !LOC.bypass) {      // the computer may not answer at all: give up after a while and let the phone's copy take over
+    const ac = new AbortController(); opt.signal = ac.signal;
+    guard = setTimeout(() => ac.abort(), method === 'GET' ? locSlow() : 15000);
+  }
+  try { r = await fetch(path, opt); } catch { throw gone(); } finally { if (guard) clearTimeout(guard); }
   if (remote && (r.status === 502 || r.status === 503 || r.status === 504)) throw gone();      // Tailscale answers like this when Tallomi is not running on the computer
   let data = null;
   try { data = await r.json(); } catch { /* not json */ }
   const rev = Number(r.headers.get('X-Rev'));
   if (rev > (S.rev || 0)) S.rev = rev;                 // our own change: do not treat it as news from another window
-  if (r.status === 401 && data && data.locked) { await showLock(); return apiNet(method, path, body, isForm); }      // PIN lock: ask, then try again
-  if (r.status === 401 && data && data.pair) { location.replace('/pair'); throw new Error('這支手機需要重新配對'); }
+  if (r.status === 401 && data && data.locked) { await showLock(); return apiNetGo(method, path, body, isForm); }      // PIN lock: ask, then try again
+  if (r.status === 401 && data && data.pair) { location.replace('/pair' + (typeof isQuickHash === 'function' && isQuickHash(location.hash) ? location.hash : '')); throw new Error('這支手機需要重新配對'); }      // a quick-entry link survives the pairing page
   if ((r.status === 404 || r.status === 405) && path.startsWith('/api/') && (!data || data.error === '找不到' || !data.error))
     { const err = new Error('目前執行的 Tallomi 程式是舊版，缺少這個功能。請把 Tallomi 完全結束（設定 → 結束 Tallomi），再重新開啟。'); err.status = r.status; throw err; }
   if (!r.ok) { const err = new Error((data && data.error) || `請求失敗（${r.status}）`); err.status = r.status; throw err; }
@@ -295,9 +335,11 @@ function pageIntro(text) {
 }
 
 async function refresh() {
-  S.st = await api('GET', '/api/state');
+  pfRoute(currentRoute());                             // the page's own questions leave now, together with the one for the state (not one after the other)
+  S.st = (await pfState()) || await api('GET', '/api/state');
   S.lastRefresh = Date.now(); S.day = nowLocal().slice(0, 10);
   if (typeof offlineSync === 'function') await offlineSync();
+  if (typeof locAfterRefresh === 'function') locAfterRefresh().catch(() => {});
   if (!S.prefsApplied && S.st.prefs) { S.prefsApplied = true; applyPrefs(S.st.prefs); }
   $('#ver').textContent = `版本 ${S.st.version}`;
   updateAdvBadge();
@@ -388,20 +430,31 @@ const SNAP_MAX_AGE = 10 * 60 * 1000;
 // 1.53.0 — on a phone, slide a finger left/right over the page to go to the next/previous page of the main menu (總覽 ⇄ 月曆 ⇄ 交易 …).
 // Not started on things that already use a sideways move: swipeable rows, the calendar grid, anything that scrolls sideways, charts, fields, sheets.
 const PAGE_SWIPE_AT = 70;
-function pageSwipeSkip(t) {
+const CAL_EDGE = 64;                                                   // on the calendar grid only a slide that starts this close to a side of the screen changes page; elsewhere on it, it changes month
+const calEdge = (x) => x < CAL_EDGE || x > document.documentElement.clientWidth - CAL_EDGE;
+function pageSwipeSkip(t, x) {
   if (!t || !t.closest) return true;
-  if (t.closest('dialog, input, select, textarea, canvas, .swipeable, .cal, .nav, .no-page-swipe, [draggable=true], .tile.lifted, .tpl-row, .kb, summary')) return true;
+  if (t.closest('.cal') && !calEdge(x)) return true;
+  if (t.closest('.swipeable') && !calEdge(x)) return true;           // 1.60.1: a row with swipe actions keeps its own slide, except near the two sides of the screen, where a slide changes page
+  if (t.closest('dialog, input, select, textarea, canvas, .nav, .no-page-swipe, [draggable=true], .tile.lifted, .tpl-row, .kb, summary')) return true;
   for (let n = t; n && n !== document.body; n = n.parentElement) {
     if (n.scrollWidth > n.clientWidth + 2) { const ox = getComputedStyle(n).overflowX; if (ox === 'auto' || ox === 'scroll') return true; }
   }
   return false;
 }
-function pageSwipeTarget(dir) {
-  const links = [...document.querySelectorAll('.nav a[data-route]')].filter((a) => !a.hidden && a.offsetParent !== null || a.getClientRects().length);
-  const i = links.findIndex((a) => a.dataset.route === S.route);
-  if (i < 0) return null;
-  const to = links[i + dir];
-  return to ? to.dataset.route : null;
+// The main menu's visible pages in order, with their names. Read once per gesture (it cannot change while a finger is down):
+// looking it up on every finger move forced the page to be laid out again each frame.
+function pageSwipeNav() {
+  const order = [], name = {};
+  for (const a of document.querySelectorAll('.nav a[data-route]')) {
+    if (a.hidden || (a.offsetParent === null && !a.getClientRects().length)) continue;
+    order.push(a.dataset.route); name[a.dataset.route] = a.textContent.trim();
+  }
+  return { order, name };
+}
+function pageSwipeTarget(dir, nav) {
+  const order = (nav || pageSwipeNav()).order, i = order.indexOf(S.route);
+  return i < 0 ? null : order[i + dir] || null;
 }
 {
   let st = null;
@@ -411,28 +464,29 @@ function pageSwipeTarget(dir) {
     st = null;
     if (e.pointerType !== 'touch' || !e.isPrimary || !isPhone() || document.querySelector('dialog[open]')) return;
     const W = document.documentElement.clientWidth;
-    if (e.clientX < 22 || e.clientX > W - 22 || pageSwipeSkip(e.target)) return;      // the screen's edges belong to the system's own swipe-back
-    st = { x: e.clientX, y: e.clientY, on: false, dx: 0, t: performance.now() };
+    if (e.clientX < 22 || e.clientX > W - 22 || pageSwipeSkip(e.target, e.clientX)) return;      // the screen's edges belong to the system's own swipe-back
+    st = { x: e.clientX, y: e.clientY, on: false, dx: 0, t: performance.now(), nav: null };
   });
   // the page follows the finger while it is down; a hint at the top names the page it will open and says when letting go will do it.
   // Letting go past a third of the width (or after a quick flick) slides the page away and opens the neighbour, otherwise it springs back.
   const atAt = () => Math.min(130, Math.max(PAGE_SWIPE_AT, document.documentElement.clientWidth * 0.28));
   let raf = 0, hint = null, peek = null;
   // the neighbouring page's place-holder, parked beside the page and carried along with it, so the next page really comes in from the side
-  const peekFor = (dx, to) => {
+  const peekFor = (dx, to, label) => {
     const W = document.documentElement.clientWidth;
     if (!to) { if (peek) { peek.remove(); peek = null; } return; }
-    const a = document.querySelector(`.nav a[data-route="${to}"]`); if (!a) return;
-    if (!peek) { document.querySelectorAll('.page-peek').forEach((n) => n.remove()); peek = h('div', { class: 'page-peek', 'aria-hidden': 'true' }, h('span', {}, '')); document.body.appendChild(peek); }
-    peek.firstChild.textContent = a.textContent.trim();
+    if (!peek) { document.querySelectorAll('.page-peek').forEach((n) => n.remove()); peek = h('div', { class: 'page-peek', 'aria-hidden': 'true' }); document.body.appendChild(peek); }
+    if (peek.dataset.r !== to) {                                   // the same grey outline the page shows while it loads, with its name where the title will be
+      peek.dataset.r = to; const sk = skeletonFor(to); sk.querySelector('.sk-title').replaceWith(h('h2', { class: 'pk-name' }, label)); peek.replaceChildren(sk);
+    }
     peek.style.transform = `translate3d(${dx + (dx < 0 ? W : -W)}px,0,0)`;
   };
-  const hintFor = (dx, to, armed) => {
+  const hintFor = (dx, to, armed, label) => {
     if (!to) { if (hint) { hint.remove(); hint = null; } return; }
-    const a = document.querySelector(`.nav a[data-route="${to}"]`); if (!a) return;
     if (!hint) { document.querySelectorAll('.page-pill').forEach((n) => n.remove()); hint = h('div', { class: 'page-pill hint', role: 'status' }); document.body.appendChild(hint); }
-    hint.classList.toggle('armed', armed);
-    hint.textContent = (dx < 0 ? '' : '‹ ') + a.textContent.trim() + (dx < 0 ? ' ›' : '');
+    if (hint.classList.contains('armed') !== armed) hint.classList.toggle('armed', armed);
+    const text = (dx < 0 ? '' : '‹ ') + label + (dx < 0 ? ' ›' : '');
+    if (hint.textContent !== text) hint.textContent = text;          // only when it changes: rewriting the same words every frame made the page lay out again
   };
   document.addEventListener('pointermove', (e) => {
     if (!st) return;
@@ -440,23 +494,24 @@ function pageSwipeTarget(dir) {
     if (!st.on) {
       if (Math.abs(dy) > 12 && Math.abs(dy) >= Math.abs(dx) / 1.5) { st = null; return; }    // scrolling, not swiping
       if (Math.abs(dx) < 10 || Math.abs(dx) < Math.abs(dy) * 2) return;
-      st.on = true; st.x0 = e.clientX - Math.sign(dx) * 0; view().style.transition = 'none'; view().style.willChange = 'transform';
+      st.on = true; st.nav = pageSwipeNav(); view().style.transition = 'none'; view().style.willChange = 'transform';
     }
-    const to = pageSwipeTarget(dx < 0 ? 1 : -1);
+    const to = pageSwipeTarget(dx < 0 ? 1 : -1, st.nav);
+    if (to && Math.abs(dx) > 24 && st.pf !== to) { st.pf = to; pfHeadStart(to); }                    // 1.62.0: the neighbour's questions leave while the finger is still moving
     st.real = !!to; st.dx = to ? dx : dx * 0.25;                                                         // nothing on that side: only a little rubber band
     const armed = !!to && Math.abs(dx) >= atAt();
     if (armed !== st.armed) { st.armed = armed; if (armed && navigator.vibrate) { try { navigator.vibrate(8); } catch { /* not supported */ } } }
-    if (!raf) raf = requestAnimationFrame(() => { raf = 0; if (st && st.on) { view().style.transform = `translate3d(${st.dx}px,0,0)`; const t2 = pageSwipeTarget(st.dx < 0 ? 1 : -1); hintFor(st.dx, t2, !!st.armed); peekFor(st.dx, st.real ? t2 : null); } });
+    if (!raf) raf = requestAnimationFrame(() => { raf = 0; if (st && st.on) { view().style.transform = `translate3d(${st.dx}px,0,0)`; const t2 = pageSwipeTarget(st.dx < 0 ? 1 : -1, st.nav), label = t2 && st.nav.name[t2]; hintFor(st.dx, t2, !!st.armed, label); peekFor(st.dx, st.real ? t2 : null, label); } });
   });
   document.addEventListener('pointerup', (e) => {
-    if (!st) return; const { on, t } = st; const dx = e.clientX - st.x, dy = e.clientY - st.y; st = null;
+    if (!st) return; const { on, t, nav } = st; const dx = e.clientX - st.x, dy = e.clientY - st.y; st = null;
     if (!on) return;
     S.pageSwiped = Date.now();
     const vw = view(); vw.style.willChange = '';
     if (hint) { hint.remove(); hint = null; }
     const dir = dx < 0 ? 1 : -1;
     const flick = Math.abs(dx) > 40 && Math.abs(dx) / Math.max(1, performance.now() - t) > 0.3;      // a quick short flick also counts (over 0.3 px per ms on the whole way)
-    const to = (Math.abs(dx) >= atAt() || flick) && Math.abs(dx) >= Math.abs(dy) * 1.5 ? pageSwipeTarget(dir) : null;
+    const to = (Math.abs(dx) >= atAt() || flick) && Math.abs(dx) >= Math.abs(dy) * 1.5 ? pageSwipeTarget(dir, nav) : null;
     if (!to) { peekFor(0, null); spring(vw); return; }
     const W = document.documentElement.clientWidth;
     const out = dx < 0 ? -W : W, left = Math.max(0.12, Math.min(0.26, (W - Math.abs(dx)) / W * 0.3));     // finish the slide from where the finger let go
@@ -474,6 +529,17 @@ function pageSwipeTarget(dir) {
   document.addEventListener('pointercancel', () => { if (st && st.on) { const v = view(); v.style.opacity = ''; v.style.willChange = ''; if (hint) { hint.remove(); hint = null; } peekFor(0, null); spring(v); } st = null; });
   document.addEventListener('click', (e) => { if (Date.now() - (S.pageSwiped || 0) < 400) { e.stopPropagation(); e.preventDefault(); } }, true);
 }
+// 1.60.1 — tapping the menu icon of the page you are already on (a second tap on the same icon) takes it back to the top.
+let iconTopUntil = 0;
+document.addEventListener('click', (e) => {
+  const a = e.target && e.target.closest ? e.target.closest('.nav a[data-route], .side a[data-route]') : null;
+  if (!a || a.dataset.route !== S.route || document.querySelector('dialog[open]')) return;
+  e.preventDefault();
+  if (window.scrollY < 2) return;
+  iconTopUntil = Date.now() + 900;
+  const calm = window.matchMedia && matchMedia('(prefers-reduced-motion: reduce)').matches;
+  window.scrollTo({ top: 0, behavior: calm ? 'auto' : 'smooth' });
+});
 // The new page's name, shown at the top for a moment, so a quick run of swipes never loses the way.
 function pageNameToast(route) {
   const a = document.querySelector(`.nav a[data-route="${route}"]`); if (!a) return;
@@ -486,7 +552,7 @@ function pageNameToast(route) {
 async function renderRoute() {
   if (!S.st) return;
   const my = (S.renderSeq = (S.renderSeq || 0) + 1);
-  S.afterShow = null;
+  S.afterShow = S.goAfter || null; S.goAfter = null;          // goThen(): something a shortcut asked for once the next page is on screen
   const route = currentRoute();
   const view = $('#view');
   const prev = S.route;
@@ -515,7 +581,7 @@ async function renderRoute() {
   const oldCharts = S.charts; S.charts = [];
   const stage = await buildStage(route, my, false);
   if (!stage) return;                                          // the person moved on to another page meanwhile
-  const y = window.scrollY;
+  const y = Date.now() < iconTopUntil ? 0 : window.scrollY;   // a tap on the page's own icon is taking it to the top: a refresh landing meanwhile must not undo that
   oldCharts.forEach((c) => c.destroy());
   if (stage.failed) view.replaceChildren(h('div', { class: 'empty' }, h('b', null, '畫面載入失敗'), stage.failed.message));
   else view.replaceChildren(...stage.childNodes);
@@ -531,7 +597,9 @@ async function buildStage(route, my, first) {
   stage.style.cssText = `position:absolute;left:0;top:0;width:${view.clientWidth}px;visibility:hidden;pointer-events:none`;
   view.parentNode.appendChild(stage);
   let failed = null;
+  const learning = pfBegin();                          // which questions this page asks the computer (app-prefetch.js asks them ahead next time)
   try { await ROUTES[route](stage); } catch (e) { failed = e; }
+  pfEnd(route, learning, !failed && my === S.renderSeq);
   if (my !== S.renderSeq) { stage.remove(); return null; }
   if (failed) { stage.failed = failed; if (first) { stage.replaceChildren(h('div', { class: 'empty' }, h('b', null, '畫面載入失敗'), failed.message)); } }
   return stage;
@@ -541,7 +609,7 @@ function afterShown() {
   virtualRefresh();
   if (S.afterShow) { const f = S.afterShow; S.afterShow = null; setTimeout(f, 30); }
 }
-window.addEventListener('hashchange', renderRoute);
+window.addEventListener('hashchange', () => { pfRoute(currentRoute()); renderRoute(); });     // moving to another page: its questions leave before the skeleton is even drawn
 // Moving between pages does not pile up "previous pages": the overview stays as the one page Back returns to, and going from one page to
 // another replaces the current history entry instead of adding one. (Ctrl/⌘-click, middle click and links that open elsewhere behave as usual.)
 let homeBelow = false;                                   // the overview is the entry just below this one
@@ -820,34 +888,51 @@ function overviewTop(s, base) {
       h('div', null, h('span', { class: 'label muted' }, '收入'), h('b', { class: 'pos' }, num(s.month.income, base))),
       h('div', null, h('span', { class: 'label muted' }, '支出'), h('b', { class: 'neg' }, num(s.month.expense, base)))));
 }
+// The overview is put together from blocks (see app-home.js): the person chooses which ones show and in what order ("自訂首頁").
+// Blocks that are hidden are not even asked for their data. Warnings about the numbers themselves stay on top whatever the layout is.
 async function viewOverview(view) {
   const s = S.st.summary, base = S.st.base;
-  const tiles = await overviewTiles();
-  view.append(
-    h('div', { class: 'page-head' }, h('h1', null, '總覽', eyeButton('overview'))),
-    overviewTop(s, base),
-    recurringBanner() || '', owedBanner() || '',
-    tiles,
-    transfersSwitch(s.month.with_transfers ? `本月含 ${s.month.transfers} 筆轉帳：轉出算支出、轉入算收入（換匯與買賣股票也是轉帳）` : ''),
-  );
-  const bc = budgetCard(); if (bc) view.append(bc);
+  const lay = homeLayout(), shown = lay.order.filter((id) => !lay.hidden.has(id));
+  const ov = S.ov || (S.ov = { y: new Date().getFullYear(), m: new Date().getMonth() + 1, edit: false, shut: {} });
+  view.append(h('div', { class: 'page-head' }, h('h1', null, '總覽', eyeButton('overview')),
+    h('div', { class: 'head-btns' }, h('button', { class: 'btn sm ghost home-edit-btn', type: 'button', title: '選擇總覽要顯示哪些區塊、先後順序', onclick: () => openHomeLayoutDialog() }, '自訂首頁'))));
   if (S.st.notice) view.append(h('div', { class: 'banner' }, h('span', null, S.st.notice)));
   if (s.missing_rates.length) {
     view.append(h('div', { class: 'banner' }, h('span', null, `缺少 ${s.missing_rates.join('、')} 的匯率，這些帳戶還沒有算進總資產與報表。`),
       h('a', { class: 'btn sm', href: '#/settings' }, '去填匯率')));
   }
+  const make = {
+    summary: () => overviewTop(s, base),
+    networth: () => (typeof netWorthTrend === 'function' ? netWorthTrend({ compact: true }) : null),
+    reminders: () => [recurringBanner(), owedBanner()],
+    tiles: () => overviewTiles(),
+    budget: () => budgetCard(),
+    accounts: () => homeAccounts(ov, base),
+    recent: () => homeRecent(),
+  };
+  const built = await Promise.all(shown.map((id) => make[id]()));              // the blocks that need data ask for it side by side
+  const switchAfter = shown.includes('tiles') ? 'tiles' : shown.includes('summary') ? 'summary' : null;     // the 轉帳也算收支 switch sits under the numbers it changes
+  shown.forEach((id, i) => {
+    const nodes = [].concat(built[i]).filter((n) => n instanceof Node);        // a block gives one element, a few of them, or nothing
+    if (nodes.length) view.append(...nodes);
+    if (id === switchAfter) view.append(transfersSwitch(s.month.with_transfers ? `本月含 ${s.month.transfers} 筆轉帳：轉出算支出、轉入算收入（換匯與買賣股票也是轉帳）` : ''));
+  });
+  if (!shown.length) view.append(h('div', { class: 'empty' }, h('b', null, '首頁的區塊都隱藏了'), '按右上角的「自訂首頁」，選擇要顯示哪些區塊。'));
+}
+function homeAccounts(ov, base) {
   const rows = S.st.accounts.filter((a) => !a.archived || a.balance !== 0);
-  const ov = S.ov;
-  view.append(h('section', { class: 'section' },
+  return h('section', { class: 'section' },
     h('div', { class: 'section-head' }, h('h2', null, '帳戶'), h('span', { class: 'head-btns' },
       h('button', { class: 'btn sm' + (ov.editAcc ? ' primary' : ' ghost'), type: 'button', 'aria-pressed': String(!!ov.editAcc), onclick: () => { ov.editAcc = !ov.editAcc; renderRoute(); } }, ov.editAcc ? '完成' : '編輯帳戶'),
       h('button', { class: 'btn sm ghost', onclick: () => openCalibrateDialog(null) }, '校正餘額'), h('a', { class: 'btn sm ghost', href: '#/accounts' }, '管理帳戶'))),
     h('p', { class: 'hint tile-hint' }, ov.editAcc ? '點一個帳戶來換圖示、改名、校正餘額；也可以直接拖曳磚塊換位置。' : '點一下看這個帳戶的交易；連點兩下編輯帳戶與圖示；拖曳磚塊換位置（手機先按住一下再拖）。'),
-    accountTiles(rows, base)));
+    accountTiles(rows, base));
+}
+async function homeRecent() {
   const recent = await api('GET', '/api/transactions?limit=8');
-  view.append(h('section', { class: 'section' },
+  return h('section', { class: 'section' },
     h('div', { class: 'section-head' }, h('h2', null, '最近的紀錄'), h('a', { class: 'btn sm ghost', href: '#/transactions' }, '全部交易')),
-    recent.items.length ? pickableList(recent.items) : txTable(recent.items, false)));
+    recent.items.length ? pickableList(recent.items) : txTable(recent.items, false));
 }
 
 // -------------------------------------------------------------- transactions
@@ -922,6 +1007,7 @@ function txRowEl(t, withBalance, viewer, sel, days) {
     h('td', { class: 'r c-amt' }, amountCell(t, viewer)),
     withBalance ? balanceCell(t, viewer) : null,
     h('td', { class: 'act' }, h('button', { class: 'btn sm ghost', onclick: () => openTxDialog(t) }, '編輯')));
+  tr._tx = t;                                                                      // the keyboard on the list (app-listkeys.js) needs the entry behind a line
   if (isPhone() && onTouch() && typeof enableSwipe === 'function') enableSwipe(tr, { onLeft: () => swipeDelete(t), onRight: t.settle_of ? null : () => openQuickAdd({ seed: entryFromTx(t), title: '再記一筆' }) });
   return tr;
 }
@@ -932,13 +1018,14 @@ function txTable(items, withBalance = true, viewer = null, sel = null, days = nu
   const dayOf = (t) => t.time.slice(0, 10);
   const swipeCls = isPhone() && onTouch() ? ' swipe' : '';
   if (days && typeof virtualBody === 'function' && items.length >= VIRTUAL_MIN) {         // thousands of lines: only the ones near the screen exist
-    const entries = () => { const out = []; let last = ''; for (const t of items) { const d = dayOf(t); if (d !== last) { out.push({ key: 'd' + d, kind: 'day', day: d }); last = d; } if (!days.folded.has(d)) out.push({ key: 't' + t.id, kind: 'tx', t }); } return out; };
+    const entries = () => { const out = []; let last = ''; for (const t of items) { const d = dayOf(t); if (d !== last) { out.push({ key: 'd' + d, kind: 'day', day: d, folded: days.folded.has(d) }); last = d; } if (!days.folded.has(d)) out.push({ key: 't' + t.id, kind: 'tx', t }); } return out; };
     const tbody = h('tbody'); let v;
     const flip = (key) => { if (days.folded.has(key)) days.folded.delete(key); else days.folded.add(key); v.setEntries(entries()); const b = tbody.querySelector(`tr[data-day="${key}"] .day-toggle`); if (b) b.focus({ preventScroll: true }); };
     const table = h('table', { class: 'ledger tx virt' + swipeCls }, head, tbody);
     v = virtualBody(tbody, entries(), (e) => e.kind === 'day' ? dayHeadRow(days.map[e.day], e.day, days.base, cols, days.folded.has(e.day), flip) : txRowEl(e.t, withBalance, viewer, sel, null),
       { cols, estimate: isPhone() ? { day: 46, tx: 92 } : { day: 40, tx: 44 } });
     table._virt = v;
+    table._update = (nextItems, nextDays) => { items = nextItems; days = nextDays; v.setEntries(entries()); };      // more lines arrived or days were folded: the lines already drawn stay
     return table;
   }
   return h('table', { class: 'ledger tx' + swipeCls }, head,
@@ -1020,7 +1107,7 @@ async function viewTransactions(view) {
   const selBox = h('div');
   let timer, shown = [];
   const paintBar = () => { selBox.replaceChildren(...(S.sel.size ? [selectionBar(shown, (full) => { if (full) paintList(); else paintBar(); })] : [])); };
-  const paintList = (r) => {
+  const paintList = (r, keep) => {                                     // keep: the same list got longer or days were folded, so the table already drawn is updated instead of made again
     if (r) listBox._r = r;
     r = listBox._r; if (!r) return;
     const base = r.totals.base;
@@ -1039,6 +1126,13 @@ async function viewTransactions(view) {
     const live = new Set(shown.map((t) => t.id));
     S.sel.forEach((id) => { if (!live.has(id)) S.sel.delete(id); });       // a filter hid it: it is no longer selected
     const days = { base, folded: f.folded, map: Object.fromEntries((r.groups || []).map((g) => [g.key, g])) };
+    const drawn = keep && listBox.children.length === 2 ? listBox.children[0] : null;
+    if (drawn && drawn._update && r.items.length >= VIRTUAL_MIN) {
+      drawn._update(r.items, days);
+      listBox.children[1].replaceWith(moreBox(r));
+      paintBar();
+      return;
+    }
     const table = txTable(r.items, true, f.account_id, { changed: paintBar }, days);
     listBox.replaceChildren(table, moreBox(r));
     if (table._virt) table._virt.refresh();
@@ -1059,7 +1153,7 @@ async function viewTransactions(view) {
       if (!fresh.length) r0.exhausted = true;                           // nothing new came: stop asking by itself (the button still works)
       r0.items = r0.items.concat(fresh);
       r0.groups = (r0.groups || []).concat((r.groups || []).filter((g) => !keys.has(g.key)));
-      paintList(r0);
+      paintList(r0, true);
     } catch (e) { fail(e); } finally { loadingMore = false; }
   };
   const moreBox = (r) => {
@@ -1089,8 +1183,8 @@ async function viewTransactions(view) {
   view.append(h('div', { class: 'period-bar' },
     periodSwitch(f.group, (k) => { f.group = k; f.back = null; f.limit = TX_PAGE; renderRoute(); }),
     f.group === 'day' ? h('span', { class: 'fold-btns' },
-      h('button', { class: 'btn sm ghost', type: 'button', onclick: () => { const r = listBox._r; if (r) { (r.groups || []).forEach((g) => f.folded.add(g.key)); paintList(); } } }, '全部收合'),
-      h('button', { class: 'btn sm ghost', type: 'button', onclick: () => { f.folded.clear(); paintList(); } }, '全部展開')) : null,
+      h('button', { class: 'btn sm ghost', type: 'button', onclick: () => { const r = listBox._r; if (r) { (r.groups || []).forEach((g) => f.folded.add(g.key)); paintList(undefined, true); } } }, '全部收合'),
+      h('button', { class: 'btn sm ghost', type: 'button', onclick: () => { f.folded.clear(); paintList(undefined, true); } }, '全部展開')) : null,
     f.back ? h('button', { class: 'btn ghost', type: 'button', onclick: () => {
       const b = f.back; Object.assign(f, { group: b.group, from: b.from, to: b.to, back: null, limit: TX_PAGE }); renderRoute();
     } }, `‹ 返回按${f.back.group === 'year' ? '年' : '月'}`) : null));
@@ -1310,6 +1404,7 @@ async function viewAccounts(view) {
     h('div', { class: 'page-head' }, h('div', null, h('h1', null, '帳戶', eyeButton('accounts')), phone ? null : h('p', { class: 'sub' }, about)),
       h('div', { class: 'head-btns' }, h('button', { class: 'btn', onclick: () => openCalibrateDialog(null) }, '校正餘額'), h('button', { class: 'btn primary', onclick: () => openAccountDialog(null) }, '新增帳戶'))),
     active.length ? netWorthCard(S.st.accounts, base) : null,
+    active.length ? netWorthTrend({ compact: phone }) : null,
     ...(active.length ? accountGroups(active).map((g) => h('section', { class: 'section acc-group', 'data-kind': g.kind },
       h('div', { class: 'section-head' }, h('h2', null, g.title), h('span', { class: 'acc-sub num' + (g.sum < 0 ? ' neg' : '') }, num(g.sum, base), h('small', { class: 'ccy' }, base))), list(g.rows)))
       : [h('section', { class: 'section' }, h('div', { class: 'empty' }, h('b', null, '還沒有帳戶'), '按右上角「新增帳戶」開始。'))]));
@@ -1320,7 +1415,13 @@ async function viewAccounts(view) {
 // ------------------------------------------------------------------- reports
 function chartDefaults() {
   Chart.defaults.color = css('--ink-2'); Chart.defaults.borderColor = css('--line-2');
-  Chart.defaults.font.family = getComputedStyle(document.body).fontFamily;
+  if (!chartDefaults.font) chartDefaults.font = getComputedStyle(document.body).fontFamily;
+  Chart.defaults.font.family = chartDefaults.font;
+  // Every frame of a chart's opening animation is a full redraw on the main thread, which is what a phone is busy building the page with:
+  // none there, a quick one on the computer. And a 3x screen gets a 2x picture (9 pixels per dot become 4; nobody can tell on a chart).
+  const stock = chartDefaults.stock || (chartDefaults.stock = Chart.defaults.animation);       // the library's own settings object, kept so the computer's setting can come back
+  stock.duration = 240; Chart.defaults.animation = isPhone() ? false : stock;
+  Chart.defaults.devicePixelRatio = Math.min(window.devicePixelRatio || 1, 2);
 }
 const yAxis = () => ({ beginAtZero: true, ticks: { callback: (v) => (isHidden() ? '' : v) } });
 function mkChart(canvas, cfg) { chartDefaults(); const c = new Chart(canvas, cfg); S.charts.push(c); return c; }
@@ -1504,12 +1605,13 @@ function importReportDialog(rep, title = '匯入完成') {
     rep.backup ? h('p', { class: 'hint', style: 'margin:0' }, '匯入前已自動備份。如果匯入的結果不對，可以按下面的「還原到匯入前」退回。') : null) });
 }
 
-// Settings are five folders that open and close, with a search box on top. The sections themselves are built exactly as before (settingsBody);
+// Settings are six folders that open and close, with a search box on top. The sections themselves are built exactly as before (settingsBody);
 // they are only sorted into groups here, by their heading, so a new section just lands in 「關於」 until it is listed.
 const SETTINGS_GROUPS = [
   ['外觀', ['外觀'], '主題 顏色 配色 隱藏 金額 眼睛'],
-  ['帳務', ['類別', '幣別與匯率', '定期交易'], '類別 匯率 幣別 主要幣別 固定 訂閱 房租'],
+  ['帳務', ['類別', '分類規則', '幣別與匯率', '定期交易'], '類別 分類規則 自動 規則 匯率 幣別 主要幣別 固定 訂閱 房租'],
   ['同步', ['手機連線', '這支手機', 'Google 試算表', '離線模式'], 'sheets google 同步 金鑰 試算表 手機 tailscale 離線'],
+  ['快速記帳', ['快速記帳'], '快速記帳 網址 連結 捷徑 shortcut 主畫面 iphone android qr code 書籤'],
   ['資料', ['匯入資料', '匯出與備份', '備份與匯出', 'PIN 鎖', '危險區'], '匯入 匯出 csv 備份 還原 pin 密碼 鎖 清除 刪除'],
   ['關於', ['軟體更新', '意見回饋', '關於這個版本', '切換版本'], '版本 更新 回饋 意見 開機 自動啟動 結束 關閉'],
 ];
@@ -1670,16 +1772,20 @@ async function settingsBody(view) {
         h('button', { class: 'btn', onclick: async (e) => { e.target.disabled = true; try { const r = await api('POST', '/api/rates/refresh'); await afterChange(`已更新 ${r.updated.join('、') || '無'}${r.missing.length ? `；查不到 ${r.missing.join('、')}` : ''}`); } catch (er) { fail(er); e.target.disabled = false; } } }, '從網路更新匯率')) : null,
       h('p', { class: 'hint', style: 'margin:0' }, '報表使用「目前」匯率換算，之後改匯率，過去月份的換算金額也會跟著變。帳戶自己的餘額不受影響。'))));
 
+  view.append(catRulesSection());
   view.append(recurringSection());                           // the owner PC, a paired phone and the phone version all have it
   if (st.remote) {         // a paired phone: appearance + currency only. Files, backups and the Google connection stay on the computer.
     view.append(h('section', { class: 'section' }, h('div', { class: 'section-head' }, h('h2', null, '這支手機')),
       h('div', { class: 'rows' }, h('p', { class: 'hint', style: 'margin:0' }, '你正在用手機連到家裡電腦上的 Tallomi。Google 試算表、匯入匯出、備份與手機管理只能在電腦上操作。'),
         h('p', { class: 'hint', style: 'margin:0' }, '鍵盤打不出來？', h('a', { href: 'static/kb-a.html' }, '測試頁 A（完全沒有樣式）'), '　', h('a', { href: 'static/kb-b.html' }, '測試頁 B（套用 Tallomi 樣式）'), '　', h('a', { href: 'static/kb-c.html' }, '測試頁 C（對話框）'))))); 
-    view.append(offlineSection());
+    view.append(quickLinkSection());
+    view.append(locSection());
+    if (LOC.mode === 'pc') view.append(offlineSection());
     return;
   }
-  if (st.phone) { await phoneSettings(view); return; }       // the phone version: no folders, Google connection, tray or shutdown
+  if (st.phone) { await phoneSettings(view); view.append(quickLinkSection()); return; }       // the phone version: no folders, Google connection, tray or shutdown
   await settingsPhone(view);
+  view.append(quickLinkSection());
 
   // --- google sheets
   const keyIn = h('input', { value: sh.key, placeholder: '貼上試算表網址或 ID', style: 'min-width:min(340px,100%)', 'aria-label': '試算表網址或 ID' });
@@ -1952,7 +2058,9 @@ async function revWatch() {
       if (!d.waited) await sleep(4000);
     } catch (e) {
       if (e && e.name === 'AbortError') continue;           // we stopped it ourselves (screen off) or it hung: just start again
-      fails += 1; await sleep(Math.min(30000, 3000 * fails));
+      fails += 1;
+      if (typeof locOn === 'function' && locOn() && LOC.mode === 'pc' && !LOC.bypass) locEnter().catch(() => {});      // the computer stopped answering while the page is just open: switch to the phone's copy now, not at the next tap
+      await sleep(Math.min(30000, 3000 * fails));
     } finally { clearTimeout(guard); if (S.revAbort === ac) S.revAbort = null; }
   }
 }
@@ -1964,9 +2072,10 @@ async function revWatch() {
   const phone = !!(S.st && S.st.phone);
   if (phone) phoneStartup();
   if (S.st && S.st.onboarding && typeof onboardingWizard === 'function') onboardingWizard();
+  if (typeof quickLinkStart === 'function') quickLinkStart();            // opened from a quick-entry link: show the filled-in form (never saves by itself)
   const ping = () => { if (!remote && !phone) fetch('/api/ping').catch(() => {}); };
   setInterval(ping, 5000);
-  if ((remote || offlineOn()) && 'serviceWorker' in navigator && (location.protocol === 'https:' || ['localhost', '127.0.0.1'].includes(location.hostname))) navigator.serviceWorker.register('/sw.js').catch(() => {});
+  if ((remote || offlineOn() || locOn()) && 'serviceWorker' in navigator && (location.protocol === 'https:' || ['localhost', '127.0.0.1'].includes(location.hostname))) navigator.serviceWorker.register('/sw.js').catch(() => {});
   watchTables();
   // Phone keyboard (iPhone): the page does not shrink when the keyboard slides up, only the visible part does. Measure the gap,
   // lift bottom sheets above the keyboard, hide the tab bar while typing, and put the page back where it was once the keyboard is gone.

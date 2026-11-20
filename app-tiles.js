@@ -10,7 +10,8 @@ function openQuickAdd({ type = 'expense', category = '', date = '', seed = null,
     advance: '', counterparty: '', due: '', no_budget: false, no_stats: false };
   if (seed) Object.assign(m, seed, { time: '' });                    // "record it again": same fields, the time is now
   if (date) m.time = date === nowLocal().slice(0, 10) ? nowLocal().slice(0, 16) : `${date}T${nowLocal().slice(11, 16)}`;
-  if (type === 'transfer') { const o = activeAccounts().find((a) => a.id != m.account_id); m.to_account_id = o ? o.id : null; }
+  // a transfer starts on the first other account, unless the entry being repeated (or a quick-entry link) already names where it goes
+  if (type === 'transfer' && (!m.to_account_id || m.to_account_id == m.account_id)) { const o = activeAccounts().find((a) => a.id != m.account_id); m.to_account_id = o ? o.id : null; }
   const holder = h('div', { class: 'rows', style: 'padding:0;max-width:none' });
   const draw = (focus) => {
     holder.replaceChildren(templateBar(m, draw), h('div', { class: 'grid2' }, txFields(m, draw).map((f) => (f.classList && f.classList.contains('ccy-tag')) ? null : f).filter(Boolean)));

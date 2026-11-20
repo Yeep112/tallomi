@@ -893,9 +893,10 @@ html.phone #sync-line { display: none; }
   .side { transform: translateZ(0); -webkit-backface-visibility: hidden; backface-visibility: hidden; }
   .ledger.tx tr { content-visibility: auto; contain-intrinsic-size: auto 76px; }
 }
-#view.loading::before { content: ""; display: block; height: 3px; margin: 0 0 6px; border-radius: 2px; background: linear-gradient(90deg, transparent, var(--brass, #D9B45B), transparent); background-size: 40% 100%; background-repeat: no-repeat; animation: viewload 1s ease-in-out infinite; }
-@keyframes viewload { from { background-position: -40% 0; } to { background-position: 140% 0; } }
-@media (prefers-reduced-motion: reduce) { #view.loading::before { animation: none; background-size: 100% 100%; } }
+#view.loading { overflow-x: clip; }
+#view.loading::before { content: ""; display: block; width: 40%; height: 3px; margin: 0 0 6px; border-radius: 2px; background: linear-gradient(90deg, transparent, var(--brass, #D9B45B), transparent); will-change: transform; animation: viewload 1s ease-in-out infinite; }
+@keyframes viewload { from { transform: translateX(-100%); } to { transform: translateX(250%); } }       /* transform, so the line keeps sliding while the page is built */
+@media (prefers-reduced-motion: reduce) { #view.loading::before { animation: none; width: 100%; } }
 .tpl-chip { white-space: nowrap; }
 
 /* ---- split bills */
@@ -1086,8 +1087,11 @@ tr.vs, tr.vs td { padding: 0; border: 0; background: none; }
 tr.vs td { display: block; width: 100%; }
 .ledger.tx.virt tbody { overflow-anchor: none; }
 .skeleton { padding-top: 18px; }
-.sk { display: block; border-radius: 6px; background: linear-gradient(90deg, var(--line-2) 25%, var(--line) 37%, var(--line-2) 63%); background-size: 400% 100%; animation: sk-shimmer 1.4s ease infinite; }
-@keyframes sk-shimmer { 0% { background-position: 100% 50%; } 100% { background-position: 0 50%; } }
+.sk { display: block; border-radius: 6px; background: var(--line-2); animation: sk-pulse 1.4s ease-in-out infinite; }
+/* a pulse of opacity, not a sliding gradient: it runs on the compositor, so it keeps moving while the page is being built on the main thread */
+@keyframes sk-pulse { 0%, 100% { opacity: 1; } 50% { opacity: .55; } }
+.sk-calgrid { display: grid; grid-template-columns: repeat(7, 1fr); gap: 5px; margin-bottom: 14px; } .sk-cell { aspect-ratio: 1 / 1.15; border-radius: 8px; }
+.sk-kpis { display: grid; grid-template-columns: repeat(2, 1fr); gap: 10px; margin-bottom: 14px; } .sk-kpis .sk { height: 62px; border-radius: 10px; }
 .sk-title { width: 36%; height: 30px; margin-bottom: 18px; }
 .sk-card { height: 120px; margin-bottom: 14px; border-radius: 10px; } .sk-card.tall { height: 170px; } .sk-card.short { height: 64px; }
 .sk-line { height: 14px; margin: 6px 0; } .sk-line.sm { height: 11px; }
@@ -1312,6 +1316,7 @@ tr.vs td { display: block; width: 100%; }
 @media (prefers-reduced-motion: reduce) { #view.slide-l, #view.slide-r { animation: none; } }
 @media (max-width: 720px), (max-height: 500px) and (orientation: landscape) and (pointer: coarse) {
   #view { touch-action: pan-y pinch-zoom; }          /* a sideways slide reaches the page-swipe instead of being taken by the browser */
+  :where(#view) * { touch-action: pan-y pinch-zoom; }  /* 1.60.1: set on every child too (zero specificity, so any class rule still wins) — on some pages the browser cancelled the touch stream on the first sideways move because a child fell back to auto, and the page never changed */
 }
 /* 1.54.0 — the name of the page just swiped to */
 .page-pill { position: fixed; top: calc(10px + env(safe-area-inset-top)); left: 50%; transform: translateX(-50%); z-index: 60; padding: 6px 16px; border-radius: 999px; background: rgba(20, 28, 44, .88); color: #fff; font-size: 14px; font-weight: 500; pointer-events: none; animation: pill-in .16s ease-out; transition: opacity .3s; }
@@ -1322,4 +1327,119 @@ tr.vs td { display: block; width: 100%; }
 .page-pill.hint.armed { opacity: 1; background: var(--primary, #364D63); }
 /* 1.57.0 — the page being swiped to waits at the side as a plain panel with its name, and arrives together with the finger */
 .page-peek { position: fixed; inset: 0; z-index: 24; background: var(--paper); display: flex; align-items: center; justify-content: center; pointer-events: none; will-change: transform; box-shadow: 0 0 24px rgba(0, 0, 0, .12); }
-.page-peek span { font-size: 22px; font-weight: 600; color: var(--ink-3); }
+.page-peek { flex-direction: column; align-items: stretch; justify-content: flex-start; gap: 12px; padding: calc(16px + env(safe-area-inset-top)) 14px 0; overflow: hidden; }
+.page-peek .skeleton { padding-top: 0; }
+.page-peek .sk { animation: none; opacity: .85; }                       /* still while it is carried along: nothing repaints during the drag */
+.page-peek .pk-name { margin: 0 0 18px; font-size: 24px; font-weight: 600; color: var(--ink-3); line-height: 30px; }
+
+/* 1.60.0 — 淨資產走勢: an inline-SVG line with a read-out above it (a finger or the mouse over the line reads out any day) */
+.nw-trend .section-head { align-items: center; }
+.nw-trend .section-head .seg button { padding: 5px 11px; font-size: 13px; }
+.nw-body { margin-top: 10px; }
+.nw-body.busy .nw-chart, .nw-body.busy .nw-read { opacity: .55; transition: opacity .15s; }
+.nw-read { display: flex; flex-wrap: wrap; align-items: baseline; gap: 2px 12px; }
+.nw-big { font-family: var(--serif); font-weight: 500; font-size: 28px; line-height: 1.2; font-variant-numeric: tabular-nums; }
+.nw-big small { font-family: var(--sans); font-size: 13px; color: var(--ink-3); font-weight: 400; }
+.nw-delta { font-size: 14.5px; font-variant-numeric: tabular-nums; } .nw-delta.pos { color: var(--income); } .nw-delta.neg { color: var(--expense); }
+.amounts-hidden .nw-delta.pos, .amounts-hidden .nw-delta.neg { color: var(--ink); }
+.nw-when { font-size: 13px; }
+.nw-sub { margin-top: 1px; font-size: 13px; }
+.nw-chart { position: relative; height: 190px; margin-top: 10px; touch-action: pan-y; cursor: crosshair; -webkit-user-select: none; user-select: none; -webkit-tap-highlight-color: transparent; border-radius: 4px; }
+.nw-chart.compact { height: 150px; }
+.nw-chart svg { position: absolute; inset: 0; width: 100%; height: 100%; overflow: visible; }
+.nw-line { fill: none; stroke: var(--brass); stroke-width: 2.25; vector-effect: non-scaling-stroke; stroke-linejoin: round; stroke-linecap: round; }
+.nw-area { fill: var(--brass); fill-opacity: .11; stroke: none; }
+.nw-gross { fill: none; stroke: var(--ink-3); stroke-width: 1.25; vector-effect: non-scaling-stroke; }
+.nw-debts { fill: none; stroke: var(--expense); stroke-width: 1.25; stroke-dasharray: 5 4; vector-effect: non-scaling-stroke; }
+.nw-zero { stroke: var(--line); stroke-width: 1; stroke-dasharray: 3 3; vector-effect: non-scaling-stroke; }
+.nw-cur { position: absolute; top: 0; bottom: 0; width: 0; border-left: 1px solid var(--ink-3); display: none; pointer-events: none; }
+.nw-dot { position: absolute; width: 12px; height: 12px; margin: -6px 0 0 -6px; border-radius: 50%; background: var(--brass); border: 2px solid var(--surface); box-shadow: 0 0 0 1px var(--brass); display: none; pointer-events: none; }
+.nw-chart.on .nw-cur, .nw-chart.on .nw-dot { display: block; }
+.nw-axis { display: flex; justify-content: space-between; margin-top: 5px; font-size: 12px; }
+.nw-ph { height: 232px; border-radius: 6px; background: var(--line-2); opacity: .45; }
+.nw-ph.compact { height: 192px; }
+.nw-empty { padding: 18px 2px; margin: 0; }
+.nw-note { margin: 8px 0 0; }
+.nw-tools { margin-top: 8px; display: flex; flex-wrap: wrap; gap: 6px; }
+.nw-tools .chip { font-size: 12.5px; }
+@media (max-width: 720px), (max-height: 500px) and (orientation: landscape) and (pointer: coarse) {
+  .nw-trend { margin-top: 26px; }
+  .nw-trend .section-head { gap: 8px; } .nw-trend .section-head .seg { flex: 1 1 100%; } .nw-trend .section-head .seg button { flex: 1 1 0; min-height: 36px; padding: 5px 2px; }
+  .nw-big { font-size: 26px; }
+  .nw-chart { height: 160px; } .nw-chart.compact { height: 130px; }
+  .nw-ph { height: 204px; } .nw-ph.compact { height: 174px; }
+  .nw-tools .chip { min-height: 34px; padding: 4px 14px; }
+}
+
+/* 1.60.0 — 今日漲跌 and 累計報酬 on every holding and in the summary: an amount with its percentage under it */
+.inv-pair { display: grid; justify-items: end; gap: 1px; line-height: 1.25; }
+.inv-pair .hint { font-size: 12px; font-variant-numeric: tabular-nums; }
+.worth .inv-moves { margin-left: 0; }
+.worth .inv-moves .inv-pair { justify-items: start; }
+.worth .inv-moves .inv-pair > .num { font-size: 20px; font-weight: 500; }
+.worth .inv-moves .inv-pair > .hint { font-size: 13px; }
+@media (max-width: 720px), (max-height: 500px) and (orientation: landscape) and (pointer: coarse) {
+  .inv-pair { justify-items: start; }
+  .worth .inv-moves .inv-pair > .num { font-size: 18px; }
+}
+
+/* 1.60.0 — 自訂首頁: the sheet that lists the overview's blocks */
+.home-edit { min-width: min(440px, 80vw); }
+.home-blocks { list-style: none; margin: 8px 0 0; padding: 0; border-top: 1px solid var(--line-2); }
+.hb-row { display: flex; align-items: center; gap: 8px; padding: 6px 2px; border-bottom: 1px solid var(--line-2); }
+.hb-row.off .hb-text b { color: var(--ink-3); font-weight: 400; }
+.hb-main { flex: 1 1 auto; min-width: 0; display: flex; align-items: center; gap: 12px; cursor: pointer; padding: 4px 0; }
+.hb-main input { flex: none; width: 20px; height: 20px; }
+.hb-text { display: flex; flex-direction: column; min-width: 0; }
+.hb-text small { font-size: 12.5px; line-height: 1.35; }
+.hb-move { flex: none; display: flex; gap: 4px; }
+.hb-move .btn { min-width: 40px; }
+.hb-move .btn:disabled { opacity: .3; }
+@media (max-width: 720px), (max-height: 500px) and (orientation: landscape) and (pointer: coarse) {
+  .hb-row { padding: 4px 0; } .hb-move .btn { min-width: 48px; min-height: 44px; }
+  .home-edit-btn { white-space: nowrap; }
+}
+
+/* 1.60.0 — 快速記帳網址: the settings section and the sheet that builds the link */
+.ql-out { display: grid; gap: 12px; margin-top: 4px; }
+.ql-url { width: 100%; font-size: 13.5px; text-overflow: ellipsis; }
+.ql-qr { display: flex; flex-wrap: wrap; align-items: center; gap: 12px 16px; }
+.ql-qr .qr { width: 140px; height: 140px; flex: none; }
+.ql-qr .hint { flex: 1 1 180px; }
+@media (max-width: 720px), (max-height: 500px) and (orientation: landscape) and (pointer: coarse) {
+  .ql-qr .qr { width: 128px; height: 128px; }
+}
+
+/* category rules editor (1.62.0) */
+.rule-list { display: flex; flex-direction: column; gap: 10px; }
+.rule-row { border: 1px solid var(--line-2); border-radius: 10px; padding: 10px 12px; }
+.rule-row.off { opacity: .55; }
+.rule-top { display: flex; justify-content: space-between; align-items: center; gap: 8px; margin-bottom: 6px; }
+.rule-on { display: inline-flex; align-items: center; gap: 6px; font-weight: 600; }
+.rule-foot { display: inline-flex; gap: 8px; margin-right: auto; flex-wrap: wrap; }
+.rule-sample { margin: 6px 0 0; padding-left: 18px; max-height: 8em; overflow: auto; }
+
+/* command palette and key list (1.62.0) — desktop only: the sidebar button is not shown on a phone */
+dialog.pal { margin: 12vh auto auto; width: min(580px, calc(100vw - 32px)); max-height: 70vh; overflow: hidden; }
+.pal-box { display: flex; flex-direction: column; max-height: 70vh; }
+.pal-input { width: 100%; box-sizing: border-box; border: 0; border-bottom: 1px solid var(--line-2); padding: 16px 18px; font: inherit; font-size: 17px; background: transparent; color: inherit; outline: none; }
+.pal-list { overflow: auto; padding: 6px; min-height: 60px; }
+.pal-item { display: flex; justify-content: space-between; align-items: center; gap: 12px; padding: 9px 12px; border-radius: 6px; cursor: pointer; }
+.pal-item small { color: var(--muted, #6b7685); font-size: 12px; }
+.pal-item.on { background: var(--accent-soft, rgba(60, 90, 130, .14)); }
+.pal-empty { padding: 18px 12px; color: var(--muted, #6b7685); }
+.pal-foot { padding: 8px 14px; border-top: 1px solid var(--line-2); font-size: 12.5px; }
+.side-cmd { display: flex; align-items: center; justify-content: space-between; width: 100%; margin: 0 0 10px; padding: 7px 10px; border: 1px solid var(--side-line); border-radius: 6px; background: transparent; color: var(--side-dim); font: inherit; font-size: 12.5px; cursor: pointer; }
+.side-cmd:hover, .side-cmd:focus-visible { color: var(--side-ink); border-color: var(--side-dim); }
+.side-cmd kbd, .keyhelp kbd { font: inherit; font-size: 11.5px; padding: 1px 6px; border: 1px solid currentColor; border-radius: 4px; opacity: .8; white-space: nowrap; }
+.keyhelp { display: grid; gap: 6px; }
+.kh-row { display: grid; grid-template-columns: 9em 1fr; gap: 10px; align-items: center; }
+@media (max-width: 720px), (max-height: 500px) and (orientation: landscape) and (pointer: coarse) { dialog.pal { margin: 8vh auto auto; border-radius: 12px; width: calc(100vw - 24px); } }
+
+/* 1.63.0 — the phone's own copy of the book (app-local.js) */
+.locveil { position: fixed; inset: 0; z-index: 9999; display: flex; align-items: center; justify-content: center; background: rgba(10, 20, 36, .72); padding: 24px; }
+.locveil-box { background: var(--surface); color: var(--ink); border-radius: 14px; padding: 22px 24px; max-width: 340px; text-align: center; box-shadow: 0 10px 40px rgba(0, 0, 0, .35); }
+.locveil-box b { display: block; font-size: 18px; margin-bottom: 6px; }
+.locveil-msg { margin: 0; line-height: 1.6; }
+#locbar { margin-bottom: 12px; }
+.loc-row { display: flex; justify-content: space-between; align-items: center; gap: 8px; border-top: 1px solid var(--line); padding: 8px 0; }
