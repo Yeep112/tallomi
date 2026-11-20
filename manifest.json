@@ -1,13 +1,13 @@
 {
  "app": "pennyworth",
- "version": "1.64.0",
+ "version": "1.66.0",
  "released": "2026-11-20",
- "zip": "Pennyworth-1.64.0.zip",
- "download": "Tallomi-1.64.0.zip",
- "sha256": "eff219d1ba497e53ff7dbdc93bfe6779862594530ec1732f7ca06ed0267b41e5",
- "size": 1040617,
+ "zip": "Pennyworth-1.66.0.zip",
+ "download": "Tallomi-1.66.0.zip",
+ "sha256": "9d4d82889a6be91b48b984b3e5d1583c3416e05a90b88a8d1edfe4993d2eaa2c",
+ "size": 1058262,
  "notes": [
-  "電腦沒開時圖示與功能補齊、本機模式可新增帳戶／類別／範本、定期交易手機先記、交易列表鍵盤操作"
+  "朋友還款視為轉帳且可改入帳帳戶、手機版啟動更快（第二次開啟約 0.5 秒看到畫面）、電腦沒開時不再卡在啟動畫面、離線記帳待送清單、版面修正、診斷紀錄"
  ],
  "min_version": "0",
  "manual": false,

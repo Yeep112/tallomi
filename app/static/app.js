@@ -90,9 +90,30 @@ const css = (name) => {
 
 // With offline mode on (paired phone only) reads fall back to the copy kept on the phone and new entries wait in a queue; see app-offline.js.
 async function api(method, path, body, isForm) {
-  return typeof offlineOn === 'function' && offlineOn() ? offlineApi(method, path, body, isForm) : apiNet(method, path, body, isForm);
+  if (method === 'POST' && path === '/api/transactions' && !isForm && body && typeof body === 'object' && typeof outboxKeep === 'function' && !(typeof offlineOn === 'function' && offlineOn())) {
+    const entry = outboxKeep({ ...body });                                // written down first (app-extras.js): an entry that was tapped survives the page being closed before the answer comes (a copy: the caller's own object stays as it was, so a second entry made from it is a new one)
+    try { const r = await apiRoute(method, path, entry.body, isForm); outboxDone(entry); return r; }
+    catch (e) { outboxDone(entry); throw e; }
+  }
+  return apiRoute(method, path, body, isForm);
 }
+async function apiRoute(method, path, body, isForm) {
+  if (typeof offlineOn === 'function' && offlineOn()) return offlineApi(method, path, body, isForm);
+  return typeof locGuard === 'function' ? locGuard(method, path, body, isForm) : apiNet(method, path, body, isForm);     // 1.63.0: with 電腦沒開也能用 on, a computer that does not answer is replaced by the phone's own copy (app-local.js)
+}
+// 1.62.0 — the same question asked twice at the same moment (the Settings page's status panel and its backup list both ask for the backups)
+// is sent once; the second asker gets its own copy of the answer. Any change that starts clears the list, so nothing read before a change is reused after it.
+const inflightGets = new Map();
 async function apiNet(method, path, body, isForm) {
+  if (method !== 'GET') { inflightGets.clear(); return apiNetGo(method, path, body, isForm); }
+  const f = inflightGets.get(path);
+  if (f) { pfNote(path); return f.then((d) => (d && typeof d === 'object' ? JSON.parse(JSON.stringify(d)) : d)); }
+  const p = apiNetGo(method, path, body, isForm); inflightGets.set(path, p);
+  const done = () => { if (inflightGets.get(path) === p) inflightGets.delete(path); };
+  p.then(done, done);
+  return p;
+}
+async function apiNetGo(method, path, body, isForm) {
   if (method === 'GET') {                              // an answer asked ahead (app-prefetch.js) is used if it is still good; the question is also noted so the page's next visit can ask ahead
     pfNote(path);
     const ahead = await pfTake(path);
@@ -103,14 +124,22 @@ async function apiNet(method, path, body, isForm) {
   if (isForm) opt.body = body;
   let r;
   const remote = (S.st && S.st.remote) || (typeof offlineOn === 'function' && offlineOn());
-  const gone = () => { const err = new Error(remote ? '連不上你的電腦：請確認電腦開機、Tallomi 正在執行、手機的 Tailscale 已開啟。' : '無法連線到 Tallomi 本機服務，程式可能已關閉。'); err.network = true; return err; };
-  try { r = await fetch(path, opt); } catch { throw gone(); }
-  if (remote && (r.status === 502 || r.status === 503 || r.status === 504)) throw gone();      // Tailscale answers like this when Tallomi is not running on the computer
+  const gone = () => { const err = new Error(remote || S.awayHost ? '連不上你的電腦：請確認電腦開機、Tallomi 正在執行、手機的 Tailscale 已開啟。' : '無法連線到 Tallomi 本機服務，程式可能已關閉。'); err.network = true; return err; };
+  let guard = null;
+  if (typeof locOn === 'function' && locOn() && LOC.mode === 'pc' && !LOC.bypass) {      // the computer may not answer at all: give up after a while and let the phone's copy take over
+    const ac = new AbortController(); opt.signal = ac.signal;
+    guard = setTimeout(() => ac.abort(), method === 'GET' ? locSlow() : 15000);
+  }
+  try { r = await fetch(path, opt); } catch { throw gone(); } finally { if (guard) clearTimeout(guard); }
   let data = null;
   try { data = await r.json(); } catch { /* not json */ }
+  // Tailscale (or any gateway in front of the computer) answers 502 / 503 / 504 with a page of its own when Tallomi is not running. Tallomi's own answers always carry a JSON "error".
+  // The page does not know yet that it is on a phone while it starts up (the state has not arrived), so a host that is not this computer counts too.
+  const away = remote || !/^(localhost|127\.0\.0\.1|\[::1\])$/.test(location.hostname);
+  if (away && (r.status === 502 || r.status === 503 || r.status === 504) && !(data && data.error)) { remote || (S.awayHost = true); throw gone(); }
   const rev = Number(r.headers.get('X-Rev'));
   if (rev > (S.rev || 0)) S.rev = rev;                 // our own change: do not treat it as news from another window
-  if (r.status === 401 && data && data.locked) { await showLock(); return apiNet(method, path, body, isForm); }      // PIN lock: ask, then try again
+  if (r.status === 401 && data && data.locked) { await showLock(); return apiNetGo(method, path, body, isForm); }      // PIN lock: ask, then try again
   if (r.status === 401 && data && data.pair) { location.replace('/pair' + (typeof isQuickHash === 'function' && isQuickHash(location.hash) ? location.hash : '')); throw new Error('這支手機需要重新配對'); }      // a quick-entry link survives the pairing page
   if ((r.status === 404 || r.status === 405) && path.startsWith('/api/') && (!data || data.error === '找不到' || !data.error))
     { const err = new Error('目前執行的 Tallomi 程式是舊版，缺少這個功能。請把 Tallomi 完全結束（設定 → 結束 Tallomi），再重新開啟。'); err.status = r.status; throw err; }
@@ -255,7 +284,7 @@ const S = {
   st: null,
   entry: { type: 'expense', account_id: null, to_account_id: null, amount: '', to_amount: '', category: '', note: '', tags: lsGet('pw_pin_tags') || '', time: '', advance: '', counterparty: '', due: '', no_budget: false, no_stats: false },
   txf: { q: '', type: '', account_id: '', from: '', to: '', tag: '', limit: TX_PAGE, transfers: true, group: 'day', back: null, folded: new Set() },
-  rp: { year: new Date().getFullYear(), month: new Date().getMonth() + 1, group: 'category', cmpKind: 'expense', cmpMode: 'auto', months: [], years: [], kind: 'pie', accounts: ['total'], shareKind: 'pie', shareBy: 'value' },
+  rp: { year: new Date().getFullYear(), month: new Date().getMonth() + 1, group: 'category', cmpKind: 'expense', cmpMode: 'auto', months: [], years: [], kind: 'pie', accounts: ['total'], range: 'ym', bview: 'lines', shareKind: 'pie', shareBy: 'value' },
   charts: [],
   selMode: true, sel: new Set(),                       // transactions page: multi-select
   hideAll: lsGet('pw_hide') === '1',                 // Settings: hide every page
@@ -321,6 +350,7 @@ async function refresh() {
   S.st = (await pfState()) || await api('GET', '/api/state');
   S.lastRefresh = Date.now(); S.day = nowLocal().slice(0, 10);
   if (typeof offlineSync === 'function') await offlineSync();
+  if (typeof locAfterRefresh === 'function') locAfterRefresh().catch(() => {});
   if (!S.prefsApplied && S.st.prefs) { S.prefsApplied = true; applyPrefs(S.st.prefs); }
   $('#ver').textContent = `版本 ${S.st.version}`;
   updateAdvBadge();
@@ -478,6 +508,7 @@ function pageSwipeTarget(dir, nav) {
       st.on = true; st.nav = pageSwipeNav(); view().style.transition = 'none'; view().style.willChange = 'transform';
     }
     const to = pageSwipeTarget(dx < 0 ? 1 : -1, st.nav);
+    if (to && Math.abs(dx) > 24 && st.pf !== to) { st.pf = to; pfHeadStart(to); }                    // 1.62.0: the neighbour's questions leave while the finger is still moving
     st.real = !!to; st.dx = to ? dx : dx * 0.25;                                                         // nothing on that side: only a little rubber band
     const armed = !!to && Math.abs(dx) >= atAt();
     if (armed !== st.armed) { st.armed = armed; if (armed && navigator.vibrate) { try { navigator.vibrate(8); } catch { /* not supported */ } } }
@@ -532,7 +563,7 @@ function pageNameToast(route) {
 async function renderRoute() {
   if (!S.st) return;
   const my = (S.renderSeq = (S.renderSeq || 0) + 1);
-  S.afterShow = null;
+  S.afterShow = S.goAfter || null; S.goAfter = null;          // goThen(): something a shortcut asked for once the next page is on screen
   const route = currentRoute();
   const view = $('#view');
   const prev = S.route;
@@ -619,7 +650,8 @@ function txFields(m, redraw, { editing = false } = {}) {
   const A = (id) => acct(id);
   const pick = activeAccounts().filter((a) => true);
   const keep = (id) => (id && A(id) && A(id).archived ? [A(id)] : []);
-  const choices = (selectedId) => [...pick, ...keep(selectedId)];
+  const repay = editing && !!m.settle_of;                       // a friend's repayment: where it landed may be changed (same currency), nothing else about its kind
+  const choices = (selectedId) => [...(repay ? pick.filter((a) => !A(selectedId) || a.currency === A(selectedId).currency) : pick), ...keep(selectedId)];
   const from = A(m.account_id), to = A(m.to_account_id);
   const isT = m.type === 'transfer';
   const cross = isT && from && to && from.currency !== to.currency;
@@ -627,7 +659,9 @@ function txFields(m, redraw, { editing = false } = {}) {
   const sel = (id, cur, onchange, label) => h('label', { class: 'field half' }, h('span', null, label),
     h('select', { onchange }, choices(cur).map((a) => h('option', { value: a.id, selected: a.id == cur }, `${a.name}（${a.currency}）`))));
   const out = [];
-  if (!editing || m.type !== 'adjust') {
+  if (repay) {
+    out.push(h('p', { class: 'hint field grow', style: 'margin:0' }, `${m.counterparty ? m.counterparty + '　' : ''}${m.settle_from ? m.settle_from + ' → ' : ''}還到哪個帳戶：視為轉帳，不算收入。要改入帳帳戶，從下面選。`));
+  } else if (!editing || m.type !== 'adjust') {
     out.push(h('div', { class: 'seg', role: 'group', 'aria-label': '交易類型' },
       ['expense', 'income', 'transfer'].map((t) => h('button', {
         type: 'button', 'aria-pressed': String(m.type === t),
@@ -637,7 +671,7 @@ function txFields(m, redraw, { editing = false } = {}) {
   out.push(h('label', { class: 'field' }, h('span', null, m.type === 'adjust' ? '金額（正數為增加、負數為減少）' : '金額'),
     h('input', { class: 'amt', name: 'amount', inputmode: 'decimal', autocomplete: 'off', placeholder: '0', value: m.amount, 'aria-label': '金額', oninput: (e) => { m.amount = e.target.value; if (hintFn) hintFn(); } })));
   if (from) out.push(h('span', { class: 'ccy-tag' }, from.currency));
-  out.push(sel(m.account_id, m.account_id, (e) => { m.account_id = +e.target.value; redraw(); }, isT ? '轉出帳戶' : '帳戶'));
+  out.push(sel(m.account_id, m.account_id, (e) => { m.account_id = +e.target.value; redraw(); }, repay ? '還到哪個帳戶' : isT ? '轉出帳戶' : '帳戶'));
   if (isT) {
     out.push(sel(m.to_account_id, m.to_account_id, (e) => { m.to_account_id = +e.target.value; redraw(); }, '轉入帳戶'));
     if (cross) {
@@ -654,7 +688,7 @@ function txFields(m, redraw, { editing = false } = {}) {
         h('input', { name: 'to_amount', inputmode: 'decimal', autocomplete: 'off', value: m.to_amount, 'aria-label': '轉入金額', oninput: (e) => { m.to_amount = e.target.value; } }),
         hintEl));
     }
-  } else {
+  } else if (!repay) {
     out.push(catField(m));
   }
   out.push(h('label', { class: 'field grow' }, h('span', null, '備註'),
@@ -779,7 +813,7 @@ async function recordEntry(m) {
 }
 
 function openTxDialog(tx) {
-  const m = { type: tx.type, account_id: tx.account_id, to_account_id: tx.to_account_id, amount: String(tx.amount), to_amount: tx.to_amount == null ? '' : String(tx.to_amount), category: tx.category, note: tx.note, tags: (tx.tags || []).join(' '), advance: tx.advance || '', counterparty: tx.counterparty || '', due: tx.due || '', auto_settle: tx.auto_account_id || '', no_budget: !!tx.no_budget, no_stats: !!tx.no_stats, settle_of: tx.settle_of || null, receipts: [...(tx.receipts || [])], photos: [], dropped: [], time: tx.time };
+  const m = { type: tx.type, account_id: tx.account_id, to_account_id: tx.to_account_id, amount: String(tx.amount), to_amount: tx.to_amount == null ? '' : String(tx.to_amount), category: tx.category, note: tx.note, tags: (tx.tags || []).join(' '), advance: tx.advance || '', counterparty: tx.counterparty || '', due: tx.due || '', auto_settle: tx.auto_account_id || '', no_budget: !!tx.no_budget, no_stats: !!tx.no_stats, settle_of: tx.settle_of || null, settle_from: tx.settle_from || '', receipts: [...(tx.receipts || [])], photos: [], dropped: [], time: tx.time };
   const holder = h('div', { class: 'rows', style: 'padding:0;max-width:none' });
   const draw = () => { holder.replaceChildren(...[h('div', { class: 'grid2' }, txFields(m, draw, { editing: true }).map((f) => (f.classList && f.classList.contains('ccy-tag')) ? null : f))].filter(Boolean)); };
   draw();
@@ -927,6 +961,7 @@ function amountCell(t, viewer) {
     const cross = t.currency !== t.to_currency;
     return h('span', { class: 'num' }, `${num(t.amount, t.currency)} ${t.currency}`, cross ? h('span', { class: 'muted' }, ` → ${num(t.to_amount, t.to_currency)} ${t.to_currency}`) : null);
   }
+  if (t.settle_of) return h('span', { class: 'num', title: '朋友還款：視為轉帳' }, `${num(t.amount, t.currency)} ${t.currency}`);
   const signed = t.type === 'expense' ? -t.amount : t.amount;
   return money(signed, t.currency, { sign: true, tone: true });
 }
@@ -977,9 +1012,9 @@ function txRowEl(t, withBalance, viewer, sel, days) {
   const tr = h('tr', { class: (sel && S.sel.has(t.id) ? 'picked ' : '') + 'tx-row', tabindex: '0', title: '點一下編輯這筆', ...rowOpen(t),
     ...(days ? { 'data-of': t.time.slice(0, 10), hidden: days.folded.has(t.time.slice(0, 10)) } : {}) },
     sel ? h('td', { class: 'c-sel' }, h('input', { type: 'checkbox', checked: S.sel.has(t.id), 'aria-label': `選取 ${shortTime(t.time)} ${t.note || t.category || ''}`, onchange: (e) => { if (e.target.checked) S.sel.add(t.id); else S.sel.delete(t.id); e.target.closest('tr').classList.toggle('picked', e.target.checked); sel.changed(); } })) : null,
-    h('td', { class: 'when' }, shortTime(t.time)),
-    h('td', { class: 'c-kind' }, t.settle_of ? h('span', { class: 'kind transfer', title: '朋友或公司還你的錢：不是收入，也不算進收支統計' }, '代墊收回') : h('span', { class: `kind ${t.type}` }, TYPE_LABEL[t.type])),
-    h('td', { class: 'c-cat' }, t.type === 'transfer' || t.type === 'adjust' ? typeChip(t.type)
+    h('td', { class: 'when', title: shortTime(t.time) }, h('span', { class: 'yr' }, t.time.slice(0, 5)), shortTime(t.time).slice(5)),
+    h('td', { class: 'c-kind' }, t.settle_of ? h('span', { class: 'kind transfer', title: '朋友或公司還你的錢：視為轉帳，不是收入，也不算進收支統計' }, '轉帳') : h('span', { class: `kind ${t.type}` }, TYPE_LABEL[t.type])),
+    h('td', { class: 'c-cat' }, t.type === 'transfer' || t.type === 'adjust' || t.settle_of ? typeChip(t.settle_of ? 'transfer' : t.type)
       : h('button', { class: 'chip-btn', type: 'button', title: `更換「${t.category || '未分類'}」的圖示`, 'aria-label': `更換「${t.category || '未分類'}」的圖示`, onclick: () => editCategoryIcon(t.category || '未分類') }, catChip(t.category || '未分類')),
       h('span', { class: 'cat-name' }, t.category || '')),
     h('td', { class: 'note', title: t.note }, t.note, advBadge(t), receiptMark(t), tagChips(t)),
@@ -987,13 +1022,14 @@ function txRowEl(t, withBalance, viewer, sel, days) {
     h('td', { class: 'r c-amt' }, amountCell(t, viewer)),
     withBalance ? balanceCell(t, viewer) : null,
     h('td', { class: 'act' }, h('button', { class: 'btn sm ghost', onclick: () => openTxDialog(t) }, '編輯')));
+  tr._tx = t;                                                                      // the keyboard on the list (app-listkeys.js) needs the entry behind a line
   if (isPhone() && onTouch() && typeof enableSwipe === 'function') enableSwipe(tr, { onLeft: () => swipeDelete(t), onRight: t.settle_of ? null : () => openQuickAdd({ seed: entryFromTx(t), title: '再記一筆' }) });
   return tr;
 }
 function txTable(items, withBalance = true, viewer = null, sel = null, days = null) {
   if (!items.length) return h('div', { class: 'empty' }, h('b', null, '還沒有符合的交易'), '用上方的「記一筆」開始記帳。');
   const cols = (sel ? 1 : 0) + 7 + (withBalance ? 1 : 0);
-  const head = h('thead', null, h('tr', null, sel ? h('th', { class: 'c-sel' }, '') : null, h('th', null, '時間'), h('th', null, '類型'), h('th', null, '類別'), h('th', null, '備註'), h('th', null, '帳戶'), h('th', { class: 'r' }, '金額'), withBalance ? h('th', { class: 'r' }, '餘額') : null, h('th', null, '')));
+  const head = h('thead', null, h('tr', null, sel ? h('th', { class: 'c-sel' }, '') : null, h('th', null, '時間'), h('th', null, '類型'), h('th', null, '類別'), h('th', null, '備註'), h('th', null, '帳戶'), h('th', { class: 'r' }, '金額'), withBalance ? h('th', { class: 'r c-bal' }, '餘額') : null, h('th', { class: 'c-act' }, '')));
   const dayOf = (t) => t.time.slice(0, 10);
   const swipeCls = isPhone() && onTouch() ? ' swipe' : '';
   if (days && typeof virtualBody === 'function' && items.length >= VIRTUAL_MIN) {         // thousands of lines: only the ones near the screen exist
@@ -1523,15 +1559,7 @@ async function viewReports(view) {
             plugins: { tooltip: { callbacks: { label: (c) => ` ${c.dataset.label}：${num(c.parsed.y, d.base)} ${d.base}` } } } } });
         notice(d.missing_rates);
       } else {
-        const sel = r.accounts.length ? r.accounts : ['total'];
-        const d = await api('GET', `/api/reports/balances?accounts=${sel.join(',')}&year=${r.year}${r.month ? '&month=' + r.month : ''}`);
-        if (!d.labels.length) { out.append(h('div', { class: 'empty' }, h('b', null, '這段期間沒有資料'), '先記幾筆交易，或換一個月份。')); return; }
-        const cv = h('canvas', { role: 'img', 'aria-label': '帳戶餘額折線圖' });
-        out.append(h('div', { class: 'chart-box', style: 'margin-top:14px' }, h('h2', null, '帳戶餘額（每日收盤）'), h('div', { class: 'chart-wrap tall' }, cv)));
-        mkChart(cv, { type: 'line', data: { labels: d.labels, datasets: d.series.map((s, i) => ({ label: `${s.label}（${s.currency}）`, data: s.data, borderColor: PALETTE[i % PALETTE.length], backgroundColor: PALETTE[i % PALETTE.length], tension: .15, pointRadius: d.labels.length > 60 ? 0 : 2.5, stepped: false })) },
-          options: { maintainAspectRatio: false, interaction: { mode: 'index', intersect: false }, plugins: { tooltip: { callbacks: { label: (c) => ` ${c.dataset.label}：${num(c.parsed.y, c.dataset.label.match(/（(\w+)）$/)[1])}` } } },
-            scales: { x: { ticks: { maxTicksLimit: 12 } }, y: { ticks: { callback: (v) => (isHidden() ? '' : v) } } } } });
-        notice(d.missing_rates);
+        await drawBalanceChart(out, r, notice);
       }
     } catch (e) { out.append(h('div', { class: 'empty' }, e.message)); }
   };
@@ -1541,8 +1569,8 @@ async function viewReports(view) {
   const controls = h('div', { class: 'controls' },
     h('div', { class: 'seg', role: 'group', 'aria-label': '圖表種類' }, kinds.map(([k, l]) => h('button', { type: 'button', 'aria-pressed': String(r.kind === k), onclick: () => { r.kind = k; renderRoute(); } }, l))),
     r.kind === 'compare' ? h('div', { class: 'seg', role: 'group', 'aria-label': '比較方式' }, [['auto', '上月與去年同月'], ['custom', '自選月份'], ['years', '按年比較']].map(([k, l]) => h('button', { type: 'button', 'aria-pressed': String(r.cmpMode === k), onclick: () => { r.cmpMode = k; renderRoute(); } }, l))) : null,
-    r.kind === 'invest' || (r.kind === 'compare' && r.cmpMode !== 'auto') ? null : h('label', { class: 'field' }, h('span', null, '年'), h('select', { onchange: (e) => { r.year = +e.target.value; draw(); } }, years.map((y) => h('option', { value: y, selected: y === r.year }, y)))),
-    r.kind === 'invest' || (r.kind === 'compare' && r.cmpMode !== 'auto') ? null : h('label', { class: 'field' }, h('span', null, '月'), h('select', { onchange: (e) => { r.month = +e.target.value; draw(); } }, h('option', { value: 0, selected: !r.month }, '整年'), Array.from({ length: 12 }, (_, i) => h('option', { value: i + 1, selected: r.month === i + 1 }, `${i + 1} 月`)))),
+    r.kind === 'invest' || (r.kind === 'balance' && r.range !== 'ym') || (r.kind === 'compare' && r.cmpMode !== 'auto') ? null : h('label', { class: 'field' }, h('span', null, '年'), h('select', { onchange: (e) => { r.year = +e.target.value; draw(); } }, years.map((y) => h('option', { value: y, selected: y === r.year }, y)))),
+    r.kind === 'invest' || (r.kind === 'balance' && r.range !== 'ym') || (r.kind === 'compare' && r.cmpMode !== 'auto') ? null : h('label', { class: 'field' }, h('span', null, '月'), h('select', { onchange: (e) => { r.month = +e.target.value; draw(); } }, h('option', { value: 0, selected: !r.month }, '整年'), Array.from({ length: 12 }, (_, i) => h('option', { value: i + 1, selected: r.month === i + 1 }, `${i + 1} 月`)))),
     r.kind === 'compare' ? h('div', { class: 'seg', role: 'group', 'aria-label': '比較收入或支出' }, [['expense', '支出'], ['income', '收入']].map(([k, l]) => h('button', { type: 'button', 'aria-pressed': String(r.cmpKind === k), onclick: () => { r.cmpKind = k; renderRoute(); } }, l))) : null,
     r.kind === 'invest' ? h('div', { class: 'seg', role: 'group', 'aria-label': '占比圖種類' }, [['pie', '圓餅'], ['bar', '長條']].map(([k, l]) => h('button', { type: 'button', 'aria-pressed': String(r.shareKind === k), onclick: () => { r.shareKind = k; renderRoute(); } }, l))) : null,
     r.kind === 'invest' ? h('label', { class: 'field' }, h('span', null, '占比依'), h('select', { onchange: (e) => { r.shareBy = e.target.value; draw(); } }, [['value', '庫存市值（預估）'], ['cost', '付出成本']].map(([v, l]) => h('option', { value: v, selected: r.shareBy === v }, l)))) : null,
@@ -1550,15 +1578,8 @@ async function viewReports(view) {
   view.append(controls);
   if (r.kind === 'pie' || r.kind === 'bar' || r.kind === 'trend' || r.kind === 'compare') view.append(transfersSwitch(''));
   if (r.kind === 'balance') {
-    const chips = h('div', { class: 'chips', role: 'group', 'aria-label': '選擇要畫的帳戶' });
-    const items = [['total', `總資產（${S.st.base}）`], ...S.st.accounts.map((a) => [String(a.id), `${a.name}（${a.currency}）`])];
-    items.forEach(([k, l]) => chips.append(h('button', { class: 'chip', type: 'button', 'aria-pressed': String(r.accounts.includes(k)), onclick: (e) => {
-      r.accounts = r.accounts.includes(k) ? r.accounts.filter((x) => x !== k) : [...r.accounts, k];
-      if (!r.accounts.length) r.accounts = ['total'];
-      chips.querySelectorAll('.chip').forEach((c, i) => c.setAttribute('aria-pressed', String(r.accounts.includes(items[i][0]))));
-      draw();
-    } }, l)));
-    view.append(chips);
+    view.append(h('div', { class: 'controls' }, ...balanceControls(r, draw, () => renderRoute())));
+    view.append(balanceChips(r, draw));
   }
   view.append(out);
   await draw();
@@ -1588,11 +1609,11 @@ function importReportDialog(rep, title = '匯入完成') {
 // they are only sorted into groups here, by their heading, so a new section just lands in 「關於」 until it is listed.
 const SETTINGS_GROUPS = [
   ['外觀', ['外觀'], '主題 顏色 配色 隱藏 金額 眼睛'],
-  ['帳務', ['類別', '幣別與匯率', '定期交易'], '類別 匯率 幣別 主要幣別 固定 訂閱 房租'],
+  ['帳務', ['類別', '分類規則', '幣別與匯率', '定期交易'], '類別 分類規則 自動 規則 匯率 幣別 主要幣別 固定 訂閱 房租'],
   ['同步', ['手機連線', '這支手機', 'Google 試算表', '離線模式'], 'sheets google 同步 金鑰 試算表 手機 tailscale 離線'],
   ['快速記帳', ['快速記帳'], '快速記帳 網址 連結 捷徑 shortcut 主畫面 iphone android qr code 書籤'],
   ['資料', ['匯入資料', '匯出與備份', '備份與匯出', 'PIN 鎖', '危險區'], '匯入 匯出 csv 備份 還原 pin 密碼 鎖 清除 刪除'],
-  ['關於', ['軟體更新', '意見回饋', '關於這個版本', '切換版本'], '版本 更新 回饋 意見 開機 自動啟動 結束 關閉'],
+  ['關於', ['軟體更新', '意見回饋', '診斷紀錄', '關於這個版本', '切換版本'], '版本 更新 回饋 意見 診斷 紀錄 錯誤 閃退 當機 卡頓 記憶體 開機 自動啟動 結束 關閉'],
 ];
 function groupSettings(nodes) {
   const titleOf = (n) => { const h2 = n.querySelector && n.querySelector('.section-head h2'); return h2 ? h2.textContent.trim() : ''; };
@@ -1751,16 +1772,19 @@ async function settingsBody(view) {
         h('button', { class: 'btn', onclick: async (e) => { e.target.disabled = true; try { const r = await api('POST', '/api/rates/refresh'); await afterChange(`已更新 ${r.updated.join('、') || '無'}${r.missing.length ? `；查不到 ${r.missing.join('、')}` : ''}`); } catch (er) { fail(er); e.target.disabled = false; } } }, '從網路更新匯率')) : null,
       h('p', { class: 'hint', style: 'margin:0' }, '報表使用「目前」匯率換算，之後改匯率，過去月份的換算金額也會跟著變。帳戶自己的餘額不受影響。'))));
 
+  view.append(catRulesSection());
   view.append(recurringSection());                           // the owner PC, a paired phone and the phone version all have it
   if (st.remote) {         // a paired phone: appearance + currency only. Files, backups and the Google connection stay on the computer.
     view.append(h('section', { class: 'section' }, h('div', { class: 'section-head' }, h('h2', null, '這支手機')),
       h('div', { class: 'rows' }, h('p', { class: 'hint', style: 'margin:0' }, '你正在用手機連到家裡電腦上的 Tallomi。Google 試算表、匯入匯出、備份與手機管理只能在電腦上操作。'),
         h('p', { class: 'hint', style: 'margin:0' }, '鍵盤打不出來？', h('a', { href: 'static/kb-a.html' }, '測試頁 A（完全沒有樣式）'), '　', h('a', { href: 'static/kb-b.html' }, '測試頁 B（套用 Tallomi 樣式）'), '　', h('a', { href: 'static/kb-c.html' }, '測試頁 C（對話框）'))))); 
     view.append(quickLinkSection());
-    view.append(offlineSection());
+    view.append(locSection());
+    if (LOC.mode === 'pc') view.append(offlineSection());
+    view.append(diagSection());
     return;
   }
-  if (st.phone) { await phoneSettings(view); view.append(quickLinkSection()); return; }       // the phone version: no folders, Google connection, tray or shutdown
+  if (st.phone) { await phoneSettings(view); view.append(quickLinkSection()); view.append(diagSection()); return; }       // the phone version: no folders, Google connection, tray or shutdown
   await settingsPhone(view);
   view.append(quickLinkSection());
 
@@ -1927,6 +1951,7 @@ async function settingsBody(view) {
   { const ms = modeSection(); if (ms) view.append(ms); }
   { const fs = feedbackSection(); if (fs) view.append(fs); }
 
+  view.append(diagSection());
   // --- danger
   view.append(h('section', { class: 'section' },
     h('div', { class: 'section-head' }, h('h2', null, '危險區')),
@@ -2035,22 +2060,31 @@ async function revWatch() {
       if (!d.waited) await sleep(4000);
     } catch (e) {
       if (e && e.name === 'AbortError') continue;           // we stopped it ourselves (screen off) or it hung: just start again
-      fails += 1; await sleep(Math.min(30000, 3000 * fails));
+      fails += 1;
+      if (typeof locOn === 'function' && locOn() && LOC.mode === 'pc' && !LOC.bypass) locEnter().catch(() => {});      // the computer stopped answering while the page is just open: switch to the phone's copy now, not at the next tap
+      await sleep(Math.min(30000, 3000 * fails));
     } finally { clearTimeout(guard); if (S.revAbort === ac) S.revAbort = null; }
   }
 }
 
 // --------------------------------------------------------------------- boot
 (async function boot() {
-  try { await refresh(); } catch (e) { $('#view').replaceChildren(h('div', { class: 'empty' }, h('b', null, '無法啟動'), e.message)); }
+  try { await refresh(); } catch (e) {
+    $('#view').replaceChildren(h('div', { class: 'empty' }, h('b', null, e.network ? '暫時連不上電腦' : '無法啟動'), h('p', null, e.message),
+      e.network ? h('p', { class: 'hint' }, '電腦開機並執行 Tallomi 後就能連上。想在電腦沒開時也能用，請在連得上電腦時到「設定 → 電腦沒開也能用」開啟，手機就會存一份帳本。') : null,
+      h('button', { class: 'btn primary', type: 'button', onclick: () => location.reload() }, '重試')));
+  }
+  if (window.pwDiag) pwDiag.start(Math.round(performance.now()));            // the first page is drawn: a slow start is noted (設定 → 診斷紀錄)
   const remote = !!(S.st && S.st.remote);
   const phone = !!(S.st && S.st.phone);
+  if (typeof outboxFlush === 'function') outboxFlush().catch(() => {});       // an entry that was tapped but never answered last time is sent now
   if (phone) phoneStartup();
+  if (window.__phoneStale && typeof freshenAfterStale === 'function') freshenAfterStale();        // drawn from last time's answers: refresh as soon as the program is up
   if (S.st && S.st.onboarding && typeof onboardingWizard === 'function') onboardingWizard();
   if (typeof quickLinkStart === 'function') quickLinkStart();            // opened from a quick-entry link: show the filled-in form (never saves by itself)
   const ping = () => { if (!remote && !phone) fetch('/api/ping').catch(() => {}); };
   setInterval(ping, 5000);
-  if ((remote || offlineOn()) && 'serviceWorker' in navigator && (location.protocol === 'https:' || ['localhost', '127.0.0.1'].includes(location.hostname))) navigator.serviceWorker.register('/sw.js').catch(() => {});
+  if ((remote || offlineOn() || locOn()) && 'serviceWorker' in navigator && (location.protocol === 'https:' || ['localhost', '127.0.0.1'].includes(location.hostname))) navigator.serviceWorker.register('/sw.js').catch(() => {});
   watchTables();
   // Phone keyboard (iPhone): the page does not shrink when the keyboard slides up, only the visible part does. Measure the gap,
   // lift bottom sheets above the keyboard, hide the tab bar while typing, and put the page back where it was once the keyboard is gone.

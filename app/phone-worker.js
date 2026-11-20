@@ -24,26 +24,51 @@ async function boot() {
     if (!got) throw new Error('BUSY');
   }
   say('stage', '載入程式…');
+  // Everything the program is made of is asked for right away, while Pyodide itself is still starting: the downloads and the
+  // start-up do not wait for each other. A site built with a compiled copy (bundle.zip) hands over ready-made .pyc files, so the
+  // phone does not have to compile the program on every start; without one, the plain wheels and app.zip are used.
+  const wheelNames = ['flask', 'werkzeug', 'blinker', 'itsdangerous'].flatMap((w) => self.__wheels.filter((n) => n.startsWith(w + '-')));
+  const files = (async () => {
+    try { const r = await fetch('./bundle.zip'); if (r.ok) return { bundle: new Uint8Array(await r.arrayBuffer()) }; } catch { /* no bundle: the plain files */ }
+    return { wheels: await Promise.all(wheelNames.map((n) => fetchBytes('./wheels/' + n))), app: await fetchBytes('./app.zip') };
+  })();
+  files.catch(() => {});                                // a failure is reported where the files are used; no "unhandled" noise before that
   py = await loadPyodide({ indexURL: new URL('./pyodide/', import.meta.url).href });
-  await py.loadPackage(['sqlite3', 'ssl', 'jinja2', 'markupsafe', 'click', 'pyodide-http']);
-  py.FS.mkdirTree('/tmp/w');
-  for (const w of ['flask', 'werkzeug', 'blinker', 'itsdangerous']) {
-    const list = self.__wheels.filter((n) => n.startsWith(w + '-'));
-    for (const n of list) py.FS.writeFile('/tmp/w/' + n, await fetchBytes('./wheels/' + n));
-  }
-  py.FS.writeFile('/tmp/app.zip', await fetchBytes('./app.zip'));
-  say('stage', '讀取你的帳本…');
   py.FS.mkdirTree('/data');
   py.FS.mount(py.FS.filesystems.IDBFS, {}, '/data');
-  await new Promise((res, rej) => py.FS.syncfs(true, (e) => (e ? rej(e) : res())));
+  // the packages and the reading of the book (browser storage) are independent of each other
+  await Promise.all([
+    py.loadPackage(['sqlite3', 'ssl', 'jinja2', 'markupsafe', 'click', 'pyodide-http']),
+    new Promise((res, rej) => py.FS.syncfs(true, (e) => (e ? rej(e) : res()))),
+  ]);
+  say('stage', '讀取你的帳本…');
+  const got = await files;
+  if (got.bundle) {
+    py.FS.writeFile('/tmp/bundle.zip', got.bundle);
+  } else {
+    py.FS.mkdirTree('/tmp/w');
+    got.wheels.forEach((bytes, i) => py.FS.writeFile('/tmp/w/' + wheelNames[i], bytes));
+    py.FS.writeFile('/tmp/app.zip', got.app);
+  }
   py.globals.set('tz_offset_min', new Date().getTimezoneOffset());
   say('stage', '啟動中…');
   py.runPython(`
 import zipfile, glob, site, sys, os, time
 sp = site.getsitepackages()[0]
-for w in glob.glob('/tmp/w/*.whl'):
-    zipfile.ZipFile(w).extractall(sp)
-zipfile.ZipFile('/tmp/app.zip').extractall('/pw')
+if os.path.exists('/tmp/bundle.zip'):               # compiled: sp/... goes next to the other packages, pw/... is the program
+    z = zipfile.ZipFile('/tmp/bundle.zip')
+    for info in z.infolist():
+        if info.is_dir():
+            continue
+        top, _, rel = info.filename.partition('/')
+        dest = os.path.join(sp if top == 'sp' else '/pw', rel)
+        os.makedirs(os.path.dirname(dest), exist_ok=True)
+        with open(dest, 'wb') as f:
+            f.write(z.read(info))
+else:
+    for w in glob.glob('/tmp/w/*.whl'):
+        zipfile.ZipFile(w).extractall(sp)
+    zipfile.ZipFile('/tmp/app.zip').extractall('/pw')
 # The browser's time zone (a fixed offset is enough for a bookkeeping day boundary)
 m = int(tz_offset_min); a = abs(m)
 os.environ['TZ'] = 'UTC' + ('-' if m < 0 else '') + str(a // 60) + (':%02d' % (a % 60) if a % 60 else '')

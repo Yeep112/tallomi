@@ -42,13 +42,62 @@
   });
   fetch(BASE + 'wheels.json').then((r) => r.json()).then((wheels) => worker.postMessage({ type: 'init', wheels })).catch((e) => fail(String(e)));
 
+  // ---- last-seen answers. The program takes a few seconds to wake up on a phone; meanwhile the page can already be drawn from the
+  // answers it got last time (a thin bar says they are being refreshed). Only reads are ever answered this way, only while the
+  // program is still starting, and never for a book with a PIN lock (a locked book must not show its numbers before the PIN).
+  const BUILD = '1.66.0';
+  const BC = (() => {
+    const MAX = 40, MAX_ONE = 300000;
+    const SKIP = /^\/api\/(rev|ping|lock|export|backup|update|sheets|pair|phone|local)\b|[?&]wait=/;
+    let db = null, map = {}, lockOff = false, dirty = 0;
+    const idb = () => new Promise((res, rej) => { try { const q = indexedDB.open('tallomi-boot', 1); q.onupgradeneeded = () => q.result.createObjectStore('kv'); q.onsuccess = () => res(q.result); q.onerror = () => rej(q.error); } catch (e) { rej(e); } });
+    const ready = (async () => {
+      try {
+        db = await idb();
+        const rec = await new Promise((res) => { const r = db.transaction('kv').objectStore('kv').get('answers'); r.onsuccess = () => res(r.result); r.onerror = () => res(null); });
+        if (rec && rec.build === BUILD && rec.lockOff === true) { map = rec.map || {}; lockOff = true; }
+      } catch { db = null; }
+    })();
+    const save = () => {
+      if (!db || dirty) return; dirty = setTimeout(() => {
+        dirty = 0;
+        const keys = Object.keys(map).sort((a, b) => map[b].t - map[a].t).slice(MAX); keys.forEach((k) => delete map[k]);
+        try { db.transaction('kv', 'readwrite').objectStore('kv').put({ build: BUILD, lockOff, map }, 'answers'); } catch { /* full or closed: no cache this time */ }
+      }, 900);
+    };
+    return {
+      ready,
+      find(path) { return lockOff && map[path] ? map[path] : null; },
+      keep(path, status, headers, body) {                              // every successful read the program gives
+        const ct = Object.keys(headers).find((k) => k.toLowerCase() === 'content-type');
+        if (status !== 200 || !db || SKIP.test(path) || body.length > MAX_ONE || !/json/.test((ct && headers[ct]) || '')) return;
+        if (path === '/api/state') {
+          let j = null; try { j = JSON.parse(body); } catch { /* not json */ }
+          lockOff = !!(j && j.lock && j.lock.enabled === false);
+          if (!lockOff) { map = {}; save(); return; }                   // a PIN lock is on: nothing of this book is kept in the clear
+        }
+        if (!lockOff) return;
+        map[path] = { b: body, t: Date.now() }; save();
+      },
+      drop() { map = {}; lockOff = false; save(); },
+    };
+  })();
+  let engineReady = false;
+  window.__phoneStale = 0;
+  window.__phoneReady.then(() => { engineReady = true; }).catch(() => {});
+
   const real = window.fetch.bind(window);
   window.fetch = async (input, opt = {}) => {
     const req = new Request(input, opt);                  // lets the browser turn a form / blob / text body into bytes and headers for us
     const url = new URL(req.url);
     if (url.origin !== location.origin || !/\/api\//.test(url.pathname)) return real(input, opt);
-    await window.__phoneReady;
     const path = url.pathname.slice(url.pathname.indexOf('/api/')) + url.search;
+    if (!engineReady && req.method === 'GET') {
+      await BC.ready;
+      const hit = BC.find(path);
+      if (hit) { window.__phoneStale++; return new Response(hit.b, { status: 200, headers: { 'content-type': 'application/json', 'x-tallomi-stale': '1' } }); }
+    }
+    await window.__phoneReady;
     const body = ['GET', 'HEAD'].includes(req.method) ? null : new Uint8Array(await req.arrayBuffer());
     const hdrs = {}; req.headers.forEach((v, k) => { hdrs[k] = v; });
     const id = ++n;
@@ -56,6 +105,8 @@
     worker.postMessage({ id, method: req.method, path, headers: hdrs, body });
     const d = await reply;
     const nullBody = [101, 204, 205, 304].includes(d.status);
+    if (req.method === 'GET' && d.status === 200) { try { BC.keep(path, d.status, d.headers || {}, new TextDecoder().decode(d.body)); } catch { /* not text */ } }
+    else if (req.method === 'PUT' && /^\/api\/lock\b/.test(path) && d.status < 400) BC.drop();
     return new Response(nullBody ? null : d.body, { status: d.status, headers: d.headers });
   };
 

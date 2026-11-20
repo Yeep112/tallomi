@@ -121,7 +121,7 @@ async function viewAdvances(view) {
   const items = d.items.filter((x) => !kindF || x.advance === kindF);
   const bills = kindF === 'claim' ? [] : (d.bills || []);                  // split bills are always paid-for-friends
   const money1 = (list) => list.map((r) => `${num(r.amount, r.currency)} ${r.currency}`).join('、');
-  const intro = pageIntro('幫朋友先付錢，或自己先墊、之後要報帳的花費，記在這裡追蹤。一桌人一起吃飯由你先付，按「分帳」一次記下每個人的份；對方還錢時按「收款」，選轉進哪個帳戶。報帳可以設預計收到款項的日期，到那天自動記成已收款。逾期會在這裡、總覽和左邊選單提醒。');
+  const intro = pageIntro('幫朋友先付錢，或自己先墊、之後要報帳的花費，記在這裡追蹤。一桌人一起吃飯由你先付，按「分帳」一次記下每個人的份；對方還錢時按「收款」，選還到哪個帳戶（視為轉帳，不算收入）；記錯了，在收款那一行直接改帳戶。報帳可以設預計收到款項的日期，到那天自動記成已收款。逾期會在這裡、總覽和左邊選單提醒。');
   view.append(h('div', { class: 'page-head' }, h('div', null, h('h1', null, '代墊與報帳', eyeButton('advances'), intro.btn),
     intro.p),
     h('div', { class: 'page-actions' }, h('button', { class: 'btn primary', type: 'button', onclick: () => openBillDialog({}) }, '＋ 分帳'))));
@@ -178,11 +178,24 @@ async function viewAdvances(view) {
       if (!ok) return;
       try { await api('DELETE', `/api/transactions/${p.id}`); await afterChange('已刪除收款'); } catch (e) { fail(e); }
     };
+    // where a repayment landed can be changed right here (the same currency as the advance); the amount, time and note stay
+    const moveRepay = async (p, accId) => {
+      try {
+        await api('PUT', `/api/transactions/${p.id}`, { type: 'income', account_id: accId, amount: String(p.amount), category: p.category, note: p.note, time: p.time, tags: (p.tags || []).join(' ') });
+        await afterChange(`已改成還到「${(acct(accId) || {}).name || ''}」`);
+      } catch (e) { fail(e); await refresh().catch(() => {}); }
+    };
     if (it.payments.length) {
-      box.append(h('ul', { class: 'adv-pays' }, it.payments.map((p) => h('li', null,
-        h('span', { class: 'pay-line', role: 'button', tabindex: '0', title: '點一下編輯這筆收款', onclick: () => openTxDialog(p), onkeydown: (e) => { if (e.key === 'Enter') openTxDialog(p); } },
-          `${shortTime(p.time)}　收到 ${num(p.amount, p.currency)} ${p.currency}　${p.settle_from ? p.settle_from + ' → ' : ''}${p.account}`),
-        h('button', { class: 'btn sm ghost', type: 'button', onclick: () => delPay(p) }, '刪除')))));
+      box.append(h('ul', { class: 'adv-pays' }, it.payments.map((p) => {
+        const choices = activeAccounts().filter((a) => a.currency === p.currency).concat(acct(p.account_id) && acct(p.account_id).archived ? [acct(p.account_id)] : []);
+        return h('li', null,
+          h('span', { class: 'pay-line', role: 'button', tabindex: '0', title: '點一下編輯這筆收款', onclick: () => openTxDialog(p), onkeydown: (e) => { if (e.key === 'Enter') openTxDialog(p); } },
+            `${shortTime(p.time)}　收到 ${num(p.amount, p.currency)} ${p.currency}　${p.settle_from ? p.settle_from + ' → ' : ''}`),
+          choices.length > 1 || (choices.length === 1 && choices[0].id !== p.account_id) ? h('select', { class: 'pay-acct', 'aria-label': `${shortTime(p.time)} 這筆收款還到哪個帳戶`, title: '還到哪個帳戶（視為轉帳）',
+            onchange: (e) => { const to = +e.target.value; if (to !== p.account_id) moveRepay(p, to); } },
+            choices.map((a) => h('option', { value: a.id, selected: a.id === p.account_id }, a.name))) : h('span', null, p.account),
+          h('button', { class: 'btn sm ghost', type: 'button', onclick: () => delPay(p) }, '刪除'));
+      })));
     }
     return box;
   };

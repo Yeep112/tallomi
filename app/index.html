@@ -19,6 +19,7 @@
   <link rel="manifest" href="manifest.webmanifest?v=2">
   <link rel="stylesheet" href="static/style.css">
   <script src="static/theme.js"></script>
+  <script src="static/app-diag.js"></script>
   <script src="static/app-prefetch.js" defer></script>
   <script src="static/vendor/chart.umd.js" defer></script>
   <script src="static/vendor/qrcode.js" defer></script>
@@ -45,7 +46,12 @@
   <script src="static/app-mode.js" defer></script>
   <script src="static/app-update.js" defer></script>
   <script src="static/app-offline.js" defer></script>
+  <script src="static/app-local.js" defer></script>
   <script src="static/app-recurring.js" defer></script>
+  <script src="static/app-rules.js" defer></script>
+  <script src="static/app-palette.js" defer></script>
+  <script src="static/app-listkeys.js" defer></script>
+  <script src="static/app-balance.js" defer></script>
   <script src="static/app-bills.js" defer></script>
   <script src="static/app-networth.js" defer></script>
   <script src="static/app-home.js" defer></script>
@@ -72,6 +78,7 @@
       </nav>
       <div class="side-foot">
         <div class="sync" id="sync-line"><span class="dot"></span><span>Google 試算表：未啟用</span></div>
+        <button class="side-cmd" id="cmd-open" type="button" title="指令面板（Ctrl + K）" onclick="if(window.openPalette)openPalette()"><span>指令面板</span><kbd>Ctrl K</kbd></button>
         <div style="margin-top:6px" id="ver"></div>
       </div>
     </aside>
