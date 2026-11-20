@@ -125,7 +125,7 @@ function netWorthTrend({ compact = false } = {}) {
     body.classList.add('busy');
     try {
       const d = await nwLoad(days);
-      if (my !== seq || !sec.isConnected) return;                                   // another choice, or the page was left meanwhile
+      if (my !== seq) return;                                                       // another choice was made meanwhile (the section may not be on the page yet: the home page adds all its blocks together, after the slowest one has answered)
       body.replaceChildren(...nwDraw(d, opts).filter(Boolean));
     } catch (e) {
       if (my === seq) body.replaceChildren(h('p', { class: 'hint nw-empty' }, `讀不到走勢資料：${e.message}`));

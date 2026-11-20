@@ -917,6 +917,8 @@ async function viewOverview(view) {
   }
   const make = {
     summary: () => overviewTop(s, base),
+    review: () => (typeof reviewBlock === 'function' ? reviewBlock() : null),
+    goals: () => (typeof goalsBlock === 'function' ? goalsBlock() : null),
     networth: () => (typeof netWorthTrend === 'function' ? netWorthTrend({ compact: true }) : null),
     reminders: () => [recurringBanner(), owedBanner()],
     tiles: () => overviewTiles(),

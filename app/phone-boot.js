@@ -45,7 +45,7 @@
   // ---- last-seen answers. The program takes a few seconds to wake up on a phone; meanwhile the page can already be drawn from the
   // answers it got last time (a thin bar says they are being refreshed). Only reads are ever answered this way, only while the
   // program is still starting, and never for a book with a PIN lock (a locked book must not show its numbers before the PIN).
-  const BUILD = '1.66.0';
+  const BUILD = '1.67.0';
   const BC = (() => {
     const MAX = 40, MAX_ONE = 300000;
     const SKIP = /^\/api\/(rev|ping|lock|export|backup|update|sheets|pair|phone|local)\b|[?&]wait=/;

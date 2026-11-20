@@ -5,10 +5,12 @@
    Keep HOME_BLOCKS in step with Book.HOME_BLOCKS / HOME_OFF (book.py): a test compares them. */
 const HOME_BLOCKS = [
   { id: 'summary', name: '總資產與本月結餘', hint: '總資產、淨資產的組成、本月收入與支出' },
+  { id: 'review', name: '月度回顧', hint: '每月初一張卡片：上個月花最多的類別、和前一個月比、比平常大的支出（只在 1～10 日出現）' },
   { id: 'networth', name: '淨資產走勢', hint: '淨資產隨時間的變化，手指劃過可看每一天', off: true },
   { id: 'reminders', name: '提醒', hint: '該記的定期收支、待收回的代墊' },
   { id: 'tiles', name: '快速記帳磚塊', hint: '依類別一點就記一筆，並顯示本月各類別金額' },
   { id: 'budget', name: '本月預算', hint: '各類別預算用了多少' },
+  { id: 'goals', name: '儲蓄目標', hint: '每個目標存了多少、還差多少、每月該存多少' },
   { id: 'accounts', name: '帳戶', hint: '各帳戶的餘額磚塊，可拖曳換位置' },
   { id: 'recent', name: '最近的紀錄', hint: '最近 8 筆交易' },
 ];
