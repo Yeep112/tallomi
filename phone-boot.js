@@ -42,13 +42,64 @@
   });
   fetch(BASE + 'wheels.json').then((r) => r.json()).then((wheels) => worker.postMessage({ type: 'init', wheels })).catch((e) => fail(String(e)));
 
+  // ---- last-seen answers. The program takes a few seconds to wake up on a phone; meanwhile the page can already be drawn from the
+  // answers it got last time (a thin bar says they are being refreshed). Only reads are ever answered this way, only while the
+  // program is still starting, and never for a book with a PIN lock (a locked book must not show its numbers before the PIN).
+  const BUILD = '1.68.0';
+  const BC = (() => {
+    const MAX = 120, MAX_ONE = 300000;
+    const SKIP = /^\/api\/(rev|ping|lock|export|backup|update|sheets|pair|phone|local)\b|[?&]wait=/;
+    let db = null, map = {}, lockOff = false, dirty = 0;
+    const idb = () => new Promise((res, rej) => { try { const q = indexedDB.open('tallomi-boot', 1); q.onupgradeneeded = () => q.result.createObjectStore('kv'); q.onsuccess = () => res(q.result); q.onerror = () => rej(q.error); } catch (e) { rej(e); } });
+    const ready = (async () => {
+      try {
+        db = await idb();
+        const rec = await new Promise((res) => { const r = db.transaction('kv').objectStore('kv').get('answers'); r.onsuccess = () => res(r.result); r.onerror = () => res(null); });
+        if (rec && rec.build === BUILD && rec.lockOff === true) { map = rec.map || {}; lockOff = true; }
+      } catch { db = null; }
+    })();
+    const save = () => {
+      if (!db || dirty) return; dirty = setTimeout(() => {
+        dirty = 0;
+        const keys = Object.keys(map).sort((a, b) => map[b].t - map[a].t).slice(MAX); keys.forEach((k) => delete map[k]);
+        try { db.transaction('kv', 'readwrite').objectStore('kv').put({ build: BUILD, lockOff, map }, 'answers'); } catch { /* full or closed: no cache this time */ }
+      }, 900);
+    };
+    return {
+      ready,
+      find(path) { return lockOff && map[path] ? map[path] : null; },
+      has(path, since) { return !!(lockOff && map[path] && map[path].t >= since); },
+      get on() { return lockOff; },
+      keep(path, status, headers, body) {                              // every successful read the program gives
+        const ct = Object.keys(headers).find((k) => k.toLowerCase() === 'content-type');
+        if (status !== 200 || !db || SKIP.test(path) || body.length > MAX_ONE || !/json/.test((ct && headers[ct]) || '')) return;
+        if (path === '/api/state') {
+          let j = null; try { j = JSON.parse(body); } catch { /* not json */ }
+          lockOff = !!(j && j.lock && j.lock.enabled === false);
+          if (!lockOff) { map = {}; save(); return; }                   // a PIN lock is on: nothing of this book is kept in the clear
+        }
+        if (!lockOff) return;
+        map[path] = { b: body, t: Date.now() }; save();
+      },
+      drop() { map = {}; lockOff = false; save(); },
+    };
+  })();
+  let engineReady = false;
+  window.__phoneStale = 0;
+  window.__phoneReady.then(() => { engineReady = true; }).catch(() => {});
+
   const real = window.fetch.bind(window);
   window.fetch = async (input, opt = {}) => {
     const req = new Request(input, opt);                  // lets the browser turn a form / blob / text body into bytes and headers for us
     const url = new URL(req.url);
     if (url.origin !== location.origin || !/\/api\//.test(url.pathname)) return real(input, opt);
-    await window.__phoneReady;
     const path = url.pathname.slice(url.pathname.indexOf('/api/')) + url.search;
+    if (!engineReady && req.method === 'GET') {
+      await BC.ready;
+      const hit = BC.find(path);
+      if (hit) { window.__phoneStale++; return new Response(hit.b, { status: 200, headers: { 'content-type': 'application/json', 'x-tallomi-stale': '1' } }); }
+    }
+    await window.__phoneReady;
     const body = ['GET', 'HEAD'].includes(req.method) ? null : new Uint8Array(await req.arrayBuffer());
     const hdrs = {}; req.headers.forEach((v, k) => { hdrs[k] = v; });
     const id = ++n;
@@ -56,8 +107,46 @@
     worker.postMessage({ id, method: req.method, path, headers: hdrs, body });
     const d = await reply;
     const nullBody = [101, 204, 205, 304].includes(d.status);
+    if (req.method === 'GET' && d.status === 200) { try { BC.keep(path, d.status, d.headers || {}, new TextDecoder().decode(d.body)); } catch { /* not text */ } }
+    else if (req.method === 'PUT' && /^\/api\/lock\b/.test(path) && d.status < 400) BC.drop();
+    if (req.method !== 'GET' && req.method !== 'HEAD' && d.status < 400 && window.__phoneWarm) window.__phoneWarm.wrote();
     return new Response(nullBody ? null : d.body, { status: d.status, headers: d.headers });
   };
+
+  // ---- keeping every page's answers fresh. Answers are only kept for pages that were opened while the program was awake, so the first tap on a page
+  // that was not opened since the last change used to wait for the program to start (a few seconds on a phone). Once the program is up and the person has
+  // stopped touching the screen, ask for what each page asked for last time (app-prefetch.js keeps that list), one question at a time, so the next cold start
+  // finds every page's answer waiting. Questions are only ever reads, and nothing is done while the screen is off or the person is busy.
+  const warm = (() => {
+    const AGE = 10 * 60 * 1000;                              // an answer younger than this is fresh enough
+    let lastTouch = Date.now(), lastWrite = 0, running = false, timer = 0;
+    ['pointerdown', 'keydown', 'scroll', 'touchstart'].forEach((t) => window.addEventListener(t, () => { lastTouch = Date.now(); }, { passive: true, capture: true }));
+    const paths = () => {
+      let all = {}; try { all = JSON.parse(localStorage.getItem('pw_pf1') || '{}') || {}; } catch { all = {}; }
+      const here = (location.hash.match(/^#\/([a-z]+)/) || [])[1] || 'overview';
+      const out = [];
+      Object.keys(all).sort((a, b) => (a === here) - (b === here)).forEach((r) => { if (Array.isArray(all[r])) all[r].slice(0, 8).forEach((p) => { if (typeof p === 'string' && p.startsWith('/api/') && !out.includes(p)) out.push(p); }); });
+      return out;
+    };
+    const idle = () => new Promise((res) => { const go = () => { if (document.hidden) setTimeout(go, 3000); else if (Date.now() - lastTouch < 1500) setTimeout(go, 800); else res(); }; go(); });
+    async function run() {
+      if (running || !engineReady || !BC.on) return;
+      running = true;
+      try {
+        for (const p of paths()) {
+          await idle();
+          if (BC.has(p, Math.max(Date.now() - AGE, lastWrite))) continue;
+          const my = lastWrite;
+          try { await window.fetch(p, { headers: { 'X-Pennyworth': '1' } }).then((r) => r.arrayBuffer()); } catch { /* the page asks again the normal way */ }
+          if (my !== lastWrite) break;                       // something was written meanwhile: start over later
+        }
+      } finally { running = false; }
+    }
+    const later = (ms) => { clearTimeout(timer); timer = setTimeout(run, ms); };
+    return { start() { later(2500); }, wrote() { lastWrite = Date.now(); later(20000); }, run };
+  })();
+  window.__phoneWarm = warm;
+  window.__phoneReady.then(() => { setTimeout(() => warm.start(), 0); }).catch(() => {});
 
   // ---- service worker: keeps the program for offline use; a newer version waits until the person agrees
   if ('serviceWorker' in navigator) {

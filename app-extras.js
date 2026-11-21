@@ -138,23 +138,24 @@ function receiptMark(t) {
 // ------------------------------------------------------------------ multi-select
 function resetSelection() { S.sel = new Set(); }      // S.selMode / S.sel start out in app.js
 
-async function bulkDo(action, extra, doneText) {
-  const ids = [...S.sel];
+async function bulkDo(action, extra, doneText, ids = [...S.sel]) {
   const r = await api('POST', '/api/transactions/bulk', { ids, action, ...extra });
   S.sel = new Set();
   const skip = r.skipped ? `；略過 ${r.skipped} 筆（股票交易、轉帳或不適用的類型）` : '';
   await afterChange(`${doneText(r.changed)}${skip}`, r.changed ? undoAction(r.undo) : null);
 }
 
-function bulkCategory() {
+// `ids`: the entries to change (the ticked ones unless the keyboard asks for one particular line); `then` runs once the list is drawn again.
+function bulkCategory(ids = [...S.sel], then = null) {
   const m = { type: 'all', category: '' };
   openDialog({
-    title: `改 ${S.sel.size} 筆的類別`, body: h('div', { class: 'rows', style: 'padding:0;max-width:none' }, catField(m),
+    title: ids.length === 1 ? '移到別的類別' : `改 ${ids.length} 筆的類別`, body: h('div', { class: 'rows', style: 'padding:0;max-width:none' }, catField(m),
       h('p', { class: 'hint' }, '只有收入與支出會改；轉帳、調整與股票交易會略過。輸入新名稱就會建立新類別。')),
     primary: { label: '改類別', run: async () => {
       const c = (m.category || '').trim();
       if (!c) throw new Error('請輸入或選擇一個類別');
-      await bulkDo('category', { category: c }, (n) => `已把 ${n} 筆改成「${c}」，可以復原`);
+      await bulkDo('category', { category: c }, (n) => `已把 ${n} 筆改成「${c}」，可以復原`, ids);
+      if (then) then();
     } },
   });
 }
@@ -229,4 +230,35 @@ async function loadAutostart(box) {
       s.enabled && !s.up_to_date ? h('p', { class: 'hint', style: 'margin:4px 0 0' }, '登錄的啟動路徑和目前這份程式不同，下次啟動時會自動更新。') : null].filter(Boolean));
   };
   paint(st);
+}
+
+// ---- a new entry is written down before it is sent (1.66.0)
+// Tapping 記下 while the program is still waking up (a phone) or while the computer is slow to answer leaves the entry waiting for an answer for a few
+// seconds. If the page is closed or thrown out of memory in that time the entry used to be gone. Now it waits in a short list in the browser until the answer
+// has come, and a start-up that finds one left over sends it again. Every entry carries a client_id, so one that did arrive the first time is never recorded twice.
+// A refusal (an amount of 0, a missing account...) or a computer that cannot be reached is answered to the person as before and the entry is not kept:
+// they know it was not recorded, so nothing may appear later on its own.
+const OUTBOX = 'pw_outbox', outboxLive = new Set();
+function outboxList() {
+  try { const v = JSON.parse(localStorage.getItem(OUTBOX) || '[]'); return Array.isArray(v) ? v.filter((e) => e && e.body && e.body.client_id && Date.now() - (e.at || 0) < 7 * 86400000) : []; } catch { return []; }
+}
+function outboxSave(list) { try { if (list.length) localStorage.setItem(OUTBOX, JSON.stringify(list.slice(-50))); else localStorage.removeItem(OUTBOX); } catch { /* storage full or blocked: the entry is still sent, just not kept */ } }
+function outboxKeep(body) {
+  if (!body.client_id) body.client_id = newClientId();
+  if (!body.time) body.time = nowLocal().slice(0, 16);                           // the moment it was tapped, not the moment it arrives
+  const e = { at: Date.now(), body };
+  outboxLive.add(body.client_id);
+  outboxSave(outboxList().concat([e]));
+  return e;
+}
+function outboxDone(e) { outboxLive.delete(e.body.client_id); outboxSave(outboxList().filter((x) => x.body.client_id !== e.body.client_id)); }
+async function outboxFlush() {
+  const left = outboxList().filter((e) => !outboxLive.has(e.body.client_id));
+  let n = 0;
+  for (const e of left) {
+    outboxLive.add(e.body.client_id);
+    try { const r = await apiRoute('POST', '/api/transactions', e.body); if (!r || !r.duplicate) n += 1; outboxDone(e); }
+    catch (err) { outboxLive.delete(e.body.client_id); if (err && err.network) break; outboxDone(e); }
+  }
+  if (n) { toast(`補記了 ${n} 筆上次沒送出的記帳`); try { await refresh(); } catch { /* the next action says what is wrong */ } }
 }

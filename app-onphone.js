@@ -69,6 +69,21 @@ window.addEventListener('beforeinstallprompt', (e) => { e.preventDefault(); inst
 async function storageState() {
   try { return navigator.storage && navigator.storage.persisted ? await navigator.storage.persisted() : false; } catch { return false; }
 }
+// The page may have been drawn from the answers kept last time while the program was still starting (phone/phone-boot.js). Once the
+// program is up, ask again and redraw. A box that already has something typed in it gets a few seconds to be finished first; a sheet
+// that is open does not matter (it is not part of the page being redrawn).
+async function freshenAfterStale() {
+  const root = document.documentElement;
+  root.classList.add('stale');
+  try { await window.__phoneReady; } catch { root.classList.remove('stale'); return; }
+  for (let i = 0; i < 16; i++) {
+    const a = document.activeElement;           // "typing" = a box with something already in it (an empty focused box is just where the cursor waits)
+    if (!(a && /^(INPUT|TEXTAREA)$/.test(a.tagName) && a.value)) break;
+    await new Promise((r) => setTimeout(r, 500));
+  }
+  try { await refresh(); } catch { /* the next action says what is wrong */ }
+  root.classList.remove('stale');
+}
 function phoneStartup() {
   try { if (navigator.storage && navigator.storage.persist) navigator.storage.persist().catch(() => {}); } catch { /* ignore */ }
   if (isStandalone()) return;

@@ -12,7 +12,16 @@ const LOC_SHELL = 'tallomi-offline';                 // the page itself (the ser
 const LOC = { mode: 'pc', worker: null, ready: null, n: 0, waiting: new Map(), db: null, rev: 0, bypass: false, entering: null, returning: false,
   syncing: false, lastTry: 0, down: 0, problems: 0, pending: 0, error: '', warm: '' };
 const locOn = () => lsGet(LOC_FLAG) === '1';
+// When the phone last found the computer away. A start-up soon after goes straight for the copy: the copy is started while the first question
+// to the computer is still on its way, and a slow answer counts as "away" sooner. (localStorage is read directly: this file runs before app.js.)
+const LOC_HINT = 'pw_loc_down', LOC_HINT_MS = 10 * 60 * 1000;
+const locHintSet = (on) => {
+  try { if (on) localStorage.setItem(LOC_HINT, String(Date.now())); else localStorage.removeItem(LOC_HINT); } catch { /* storage unavailable */ }
+  try { if (window.caches) caches.open(LOC_SHELL).then((c) => (on ? c.put('/__away', new Response(String(Date.now()))) : c.delete('/__away'))).catch(() => {}); } catch { /* no cache storage */ }   // the service worker opens the page sooner with it
+};
+const locHint = () => { try { const t = Number(localStorage.getItem(LOC_HINT)) || 0; return t && Date.now() - t < LOC_HINT_MS ? t : 0; } catch { return 0; } };
 const locRealFetch = window.fetch.bind(window);
+LOC.down = locHint();
 
 // ------------------------------------------------------------------ storage on the phone (separate from the old offline mode)
 function locOpen() {
@@ -53,7 +62,7 @@ async function locCounts() {
 // ---------------------------------------------------------- what may be done while the computer is away
 // 'log'   a change to entries, accounts, categories, templates, bills, recurring rules: done on the copy and written to the log, sent to the computer later
 // 'local' only meaningful on this phone (colours, rates, prices, the lock): done on the copy, never sent
-// else    not available until the computer is back (settings, photos, imports, exchange, investments, backups ...)
+// else    not available until the computer is back (photos, imports, backups, Google Sheets ...)
 const LOC_LOG = [['POST', /^\/api\/transactions$/], ['PUT', /^\/api\/transactions\/\d+$/], ['DELETE', /^\/api\/transactions\/\d+$/], ['POST', /^\/api\/transactions\/bulk$/],
   ['POST', /^\/api\/advances\/\d+\/(settle|write-off|reopen)$/], ['POST', /^\/api\/advances\/delete$/], ['POST', /^\/api\/undo$/],
   ['POST', /^\/api\/accounts$/], ['PUT', /^\/api\/accounts\/order$/], ['PUT', /^\/api\/accounts\/\d+$/], ['DELETE', /^\/api\/accounts\/\d+$/], ['POST', /^\/api\/accounts\/\d+\/(calibrate|reset)$/],
@@ -62,7 +71,9 @@ const LOC_LOG = [['POST', /^\/api\/transactions$/], ['PUT', /^\/api\/transaction
   ['POST', /^\/api\/templates$/], ['PUT', /^\/api\/templates\/order$/], ['PUT', /^\/api\/templates\/\d+$/], ['DELETE', /^\/api\/templates\/\d+$/],
   ['POST', /^\/api\/bills$/], ['PUT', /^\/api\/bills\/\d+$/], ['DELETE', /^\/api\/bills\/\d+$/],
   ['POST', /^\/api\/recurring$/], ['PUT', /^\/api\/recurring\/\d+$/], ['DELETE', /^\/api\/recurring\/\d+$/], ['POST', /^\/api\/recurring\/\d+\/active$/],
-  ['PUT', /^\/api\/cat-rules$/], ['POST', /^\/api\/cat-rules\/apply$/], ['POST', /^\/api\/frequent\/(hide|restore)$/]];
+  ['PUT', /^\/api\/cat-rules$/], ['POST', /^\/api\/cat-rules\/apply$/], ['POST', /^\/api\/frequent\/(hide|restore)$/],
+  ['POST', /^\/api\/exchange$/], ['POST', /^\/api\/invest\/trades$/], ['PUT', /^\/api\/invest\/trades\/\d+$/], ['POST', /^\/api\/invest\/trades\/delete$/], ['DELETE', /^\/api\/invest\/trades\/\d+$/],
+  ['POST', /^\/api\/invest\/securities$/], ['PUT', /^\/api\/invest\/securities\/\d+$/], ['DELETE', /^\/api\/invest\/securities\/\d+$/], ['PUT', /^\/api\/invest\/settings$/]];
 const LOC_SETTINGS = ['ui_color', 'ui_hide', 'ui_hide_pages', 'count_transfers', 'home_layout', 'tile_order'];     // the look of the app: these settings can be changed while away
 const LOC_LOCAL = [['POST', /^\/api\/lock\/(unlock|unlock-biometric|lock)$/], ['PUT', /^\/api\/rates$/], ['POST', /^\/api\/rates\/refresh$/], ['PUT', /^\/api\/fx\/rates$/],
   ['POST', /^\/api\/fx\/fetch$/], ['POST', /^\/api\/market\/refresh$/], ['POST', /^\/api\/invest\/fetch$/], ['PUT', /^\/api\/invest\/price$/], ['POST', /^\/api\/cat-rules\/preview$/],
@@ -75,20 +86,25 @@ function locPolicy(method, path, data) {
   if (method === 'PUT' && path === '/api/settings' && data && typeof data === 'object' && Object.keys(data).length && Object.keys(data).every((k) => LOC_SETTINGS.includes(k))) return 'log';       // colours, hidden pages, tile order, home layout
   return 'block';
 }
-const LOC_BLOCKED = '電腦沒有開啟時，這項要等電腦連線後再做。目前可以：記帳、修改或刪除交易、新增帳戶／類別／範本、代墊收款、看報表、更新匯率與股價。';
+const LOC_BLOCKED = '電腦沒有開啟時，這項要等電腦連線後再做。目前可以：記帳、修改或刪除交易、新增帳戶／類別／範本、換匯、投資買賣、代墊收款、看報表、更新匯率與股價。';
 
 // -------------------------------------------------------------------------- the engine on the phone
 async function locStart(install) {
   if (LOC.worker) return LOC.ready;
+  if (LOC.starting) return LOC.starting;                                          // started a moment ago by the warm-up: one copy only (two would fight over the book)
+  LOC.starting = locStart1(install).finally(() => { LOC.starting = null; });
+  return LOC.starting;
+}
+async function locStart1(install) {
   const cfg = await kvGet('cfg'), engine = await kvGet('engine');
   if (!cfg || !engine) throw new Error('手機上還沒有準備好帳本副本（要在連上電腦時先備妥）');
-  const w = new Worker('static/local-worker.js', { type: 'module' });
+  const w = new Worker('static/local-worker.js?v=' + PW_BUILD, { type: 'module' });             // the build in the address: the service worker answers it from the phone at once
   LOC.worker = w;
   LOC.ready = new Promise((resolve, reject) => {
     w.addEventListener('error', (e) => { LOC.worker = null; reject(new Error(e.message || '手機上的程式無法啟動')); });
     w.addEventListener('message', (ev) => {
       const d = ev.data;
-      if (d.type === 'stage') setLocVeil(d.m);
+      if (d.type === 'stage') { if (LOC.mode === 'entering') setLocVeil(d.m); }
       else if (d.type === 'ready') resolve();
       else if (d.type === 'error') { LOC.worker = null; reject(new Error(d.m === 'BUSY' ? 'Tallomi 已經在另一個視窗開著，請先關掉那個視窗' : d.m)); }
       else if (d.id && LOC.waiting.has(d.id)) { LOC.waiting.get(d.id)(d); LOC.waiting.delete(d.id); }
@@ -100,7 +116,7 @@ async function locStart(install) {
 }
 function locStop() {
   if (LOC.worker) { try { LOC.worker.terminate(); } catch { /* gone */ } }
-  LOC.worker = null; LOC.ready = null; LOC.waiting.clear();
+  LOC.worker = null; LOC.ready = null; LOC.starting = null; LOC.waiting.clear();
 }
 async function locAsk(method, path, headers, body) {
   await LOC.ready;
@@ -122,7 +138,8 @@ async function locTouchesAutoMade(method, path, data) {
   else if (/^\/api\/advances\/\d+\/(settle|write-off|reopen)$/.test(path)) ids = [Number(path.split('/')[3])];
   if (!ids.length) return false;
   const max = (await kvGet('dbmax')) || 0;
-  const made = new Set((await locJournal()).filter((j) => j.method === 'POST' && j.path === '/api/transactions' && j.res).map((j) => j.res.id));
+  const made = new Set();
+  for (const j of await locJournal()) { if (j.method !== 'POST' || !j.res) continue; if (j.path === '/api/transactions' || j.path === '/api/exchange') made.add(j.res.id); if (j.res.tx_id != null) made.add(j.res.tx_id); }
   return ids.some((id) => id > max && !made.has(id));
 }
 
@@ -176,9 +193,21 @@ window.fetch = (input, opt) => {
 };
 
 // ----------------------------------------------------------------------- going over to the copy, and back
+// Start the copy now, without telling anyone, when it will probably be needed (it takes a few seconds to wake). If the computer turns out to be
+// there after all, the copy is stopped again (locGuard); if it is away, locEnter takes the copy over and only has to wait for what is left.
+async function locPrewarm() {
+  if (LOC.worker || LOC.mode !== 'pc' || !locOn() || LOC.pcOk) return;
+  try {
+    const journal = await locJournal(), snap = await kvGet('snap');
+    if (LOC.worker || LOC.pcOk || (!journal.length && !snap)) return;
+    LOC.warmOnly = true;
+    await locStart(journal.length ? null : snap.bytes);
+  } catch { if (LOC.warmOnly) { locStop(); LOC.warmOnly = false; } }
+}
+document.addEventListener('DOMContentLoaded', () => { if (locOn() && locHint() && navigator.onLine !== false) locPrewarm(); });
 async function locConfirmDown() {                                                  // a slow answer is not the same as a computer that is off
   try {
-    const ac = new AbortController(); const t = setTimeout(() => ac.abort(), 3000);
+    const ac = new AbortController(); const t = setTimeout(() => ac.abort(), Date.now() - (LOC.silentAt || 0) < 10000 ? 1200 : 3000);       // two questions went unanswered already: a short look is enough
     const r = await locRealFetch('/api/ping', { cache: 'no-store', signal: ac.signal }); clearTimeout(t);
     return r.status >= 500;
   } catch { return true; }
@@ -187,8 +216,9 @@ async function locEnter() {
   if (LOC.mode === 'local') return true;
   if (LOC.entering) return LOC.entering;
   LOC.entering = (async () => {
-    if (!(await locConfirmDown())) return false;
-    LOC.error = '';
+    locPrewarm().catch(() => {});                                                  // the copy wakes up while the computer is asked
+    if (!(await locConfirmDown())) { if (LOC.warmOnly) { locStop(); LOC.warmOnly = false; } return false; }
+    LOC.warmOnly = false; LOC.error = '';
     try {
       const journal = await locJournal();
       const snap = await kvGet('snap');
@@ -198,7 +228,7 @@ async function locEnter() {
       if (!journal.length) await kvPut('dbmax', snap.maxTx || 0);                  // entries numbered above this were made by the copy itself
       await locStart(journal.length ? null : snap.bytes);                          // a log is waiting: carry on with the copy that holds those changes
       LOC.rev = 0; S.rev = null; LOC.mode = 'local';
-      await locCounts(); locProbe();
+      await locCounts(); locProbe(); locHintSet(true);
       setTimeout(() => { if (typeof refresh === 'function') refresh().catch(() => {}); }, 0);
       return true;
     } catch (e) {
@@ -211,15 +241,22 @@ async function locEnter() {
 // called by api(): a request that could not reach the computer gets answered by the copy, if there is one
 async function locGuard(method, path, body, isForm) {
   if (!locOn() || LOC.mode !== 'pc' || LOC.bypass) return apiNet(method, path, body, isForm);
-  try { return await apiNet(method, path, body, isForm); }
+  const computerAnswered = () => {                                                  // it is there: the note that it was away is out of date, and a warmed-up copy is not needed
+    LOC.pcOk = true;
+    if (LOC.down) { LOC.down = 0; locHintSet(false); }
+    if (LOC.warmOnly && !LOC.entering) { locStop(); LOC.warmOnly = false; }
+  };
+  try { const r = await apiNet(method, path, body, isForm); computerAnswered(); return r; }
   catch (e) {
-    if (!e || !e.network) throw e;
+    if (!e || !e.network) { computerAnswered(); throw e; }
     LOC.down = Date.now();
     if (!(await locEnter())) throw e;
     return apiNet(method, path, body, isForm);
   }
 }
-const locSlow = () => (Date.now() - LOC.down < 30000 ? 1800 : 7000);                // how long a read may take before the computer counts as away
+// A question that was left unanswered a moment ago (the first page's own, see app-prefetch.js) already used up the waiting: the next one gets only a short look.
+const locSlow = () => (Date.now() - (LOC.silentAt || 0) < 10000 ? 800 : Date.now() - LOC.down < LOC_HINT_MS ? 1800 : 7000);
+function locNoteSilent() { LOC.silentAt = LOC.down = Date.now(); locPrewarm().catch(() => {}); }                // how long a read may take before the computer counts as away
 
 let locProbing = false;
 function locProbe() {
@@ -231,7 +268,8 @@ function locProbe() {
       if (document.visibilityState === 'visible') {
         let up = false;
         try { const ac = new AbortController(); const t = setTimeout(() => ac.abort(), 3500); const r = await locRealFetch('/api/ping', { cache: 'no-store', signal: ac.signal }); clearTimeout(t); up = r.status < 500; } catch { up = false; }
-        if (up) { locProbing = false; await locReturn(); if (LOC.mode === 'local') locProbe(); return; }
+        if (up) { locProbing = false; await locReturn(); if (LOC.mode === 'local') locProbe(); else locHintSet(false); return; }
+        locHintSet(true);
       }
     } catch { /* keep trying */ }
     setTimeout(tick, 4000);
@@ -243,11 +281,18 @@ window.addEventListener('offline', () => updateLocBar());
 
 // Numbers made on the copy (new entries, accounts, templates...) differ from the computer's: the computer's answer to each creation is remembered, and later
 // changes that mention that number are redirected. Each kind of thing has its own list of numbers.
-const LOC_KIND = { transactions: 'tx', advances: 'tx', accounts: 'acc', templates: 'tpl', bills: 'bill', recurring: 'rec' };
+const LOC_KIND = { transactions: 'tx', advances: 'tx', accounts: 'acc', templates: 'tpl', bills: 'bill', recurring: 'rec', exchange: 'tx' };
+// What kind of thing a path is about, and the path's own number (if it has one): /api/transactions/7, /api/invest/trades/3 ...
+function locPathInfo(path) {
+  let m = /^\/api\/invest\/(trades|securities)(?:\/(\d+))?/.exec(path);
+  if (m) return { kind: m[1] === 'trades' ? 'trade' : 'acc', id: m[2] ? Number(m[2]) : null, head: path.slice(0, m[0].length - (m[2] ? m[2].length + 1 : 0)) };
+  m = /^\/api\/([a-z]+)(?:\/(\d+))?/.exec(path);
+  return m ? { kind: LOC_KIND[m[1]] || null, id: m[2] ? Number(m[2]) : null, head: '/api/' + m[1] } : { kind: null, id: null, head: path };
+}
 function locRemap(maps, entry) {
   const m = (kind, id) => (maps[kind] && maps[kind][id] != null ? maps[kind][id] : id);
-  const own = LOC_KIND[(/^\/api\/([a-z]+)/.exec(entry.path) || [])[1]];
-  const path = entry.path.replace(/^\/api\/([a-z]+)\/(\d+)/, (all, res, id) => `/api/${res}/${m(LOC_KIND[res], Number(id))}`);
+  const info = locPathInfo(entry.path), own = info.kind;
+  const path = info.id != null ? entry.path.replace(new RegExp(`^${info.head.replace(/\//g, '\\/')}\\/${info.id}`), `${info.head}/${m(own, info.id)}`) : entry.path;
   const walk = (v, key) => {
     if (Array.isArray(v)) return v.map((x) => walk(x, key));
     if (v && typeof v === 'object') { const o = {}; for (const k of Object.keys(v)) o[k] = walk(v[k], k); return o; }
@@ -271,8 +316,10 @@ async function locReplay() {
       const { path, body } = locRemap(maps, it);
       try {
         const r = await apiNetGo(it.method, path, body);
-        const kind = it.method === 'POST' && /^\/api\/(transactions|accounts|templates|bills|recurring)$/.test(it.path) ? LOC_KIND[it.path.slice(5)] : null;
-        if (kind && it.res && it.res.id != null && r && r.id != null) { (maps[kind] = maps[kind] || {})[it.res.id] = r.id; await kvPut('idmaps', maps); }
+        const info = locPathInfo(it.path), kind = it.method === 'POST' && info.id == null && /^\/api\/(transactions|accounts|templates|bills|recurring|exchange|invest\/trades|invest\/securities)$/.test(it.path) ? info.kind : null;
+        if (kind && it.res && it.res.id != null && r && r.id != null) { (maps[kind] = maps[kind] || {})[it.res.id] = r.id; }
+        if (kind === 'trade' && it.res && it.res.tx_id != null && r && r.tx_id != null) (maps.tx = maps.tx || {})[it.res.tx_id] = r.tx_id;        // the transfer a trade writes
+        await kvPut('idmaps', maps);
         sent += 1;
       } catch (e) {
         if (e && e.network) { away = true; break; }
@@ -313,6 +360,7 @@ async function locWarm(runtime) {
     done += 1;
   }
   LOC.warm = '';
+  try { await locRealFetch('static/local-worker.js?v=' + PW_BUILD); } catch { /* the first start online keeps it */ }       // the copy of the program that the worker is started from
   return names;
 }
 async function locSyncCopy(force) {
@@ -390,7 +438,7 @@ async function locEnable(quiet) {
   if (!quiet) updateLocBar();
 }
 async function locDisable() {
-  lsSet(LOC_FLAG, '0');
+  lsSet(LOC_FLAG, '0'); locHintSet(false);
   locStop(); LOC.mode = 'pc';
   try { await caches.delete(LOC_CACHE); await caches.delete(LOC_SHELL); } catch { /* none */ }
   try { for (const s of ['kv', 'journal', 'problems']) await locTx(s, 'readwrite', (st) => st.clear()); } catch { /* none */ }
@@ -399,7 +447,7 @@ async function locDisable() {
 function locAsk1() {
   confirmBox({ title: '電腦沒開時，手機也要能用嗎？',
     message: h('div', null,
-      h('p', null, '開啟後，手機會多存一份帳本和程式。電腦沒有開啟 Tallomi 時，手機照樣能打開、記帳、修改、新增帳戶／類別／範本、看報表、更新匯率與股價；電腦回來後，這段期間的變更會自動補送，並回到同步。'),
+      h('p', null, '開啟後，手機會多存一份帳本和程式。電腦沒有開啟 Tallomi 時，手機照樣能打開、記帳、修改、新增帳戶／類別／範本、換匯、投資買賣、看報表、更新匯率與股價；電腦回來後，這段期間的變更會自動補送，並回到同步。'),
       h('p', null, h('b', null, '代價：'), '手機上多一份你的帳本。如果電腦有開 PIN 鎖，手機上的副本用同一組 PIN 開啟，但 PIN 只擋畫面、不是加密；手機遺失或被別人拿到時，這份資料可能被看到。請確認手機有設螢幕鎖。'),
       h('p', { class: 'hint' }, '第一次會下載約 14 MB 的執行環境（只下載一次），建議在 Wi-Fi 下開啟。之後可以隨時到「設定 → 電腦沒開也能用」關閉。')),
     confirmLabel: '開啟' }).then(async (ok) => {
@@ -485,7 +533,7 @@ function locSection() {
   const sec = h('section', { class: 'section' }, h('div', { class: 'section-head' }, h('h2', null, '電腦沒開也能用')),
     h('div', { class: 'rows' },
       h('label', { class: 'row-inline' }, box, h('span', null, '電腦沒有開啟 Tallomi 時，手機照樣能打開、記帳')),
-      h('p', { class: 'hint', style: 'margin:0' }, '電腦連不上時，手機自動改用手機上的帳本副本，暫停同步；匯率與股價用手機自己的網路更新。可以記帳、修改或刪除交易、新增帳戶／類別／範本、代墊收款、看報表；設定、照片、匯入、換匯與投資要等電腦回來。電腦開啟後自動補送變更並回到同步。'),
+      h('p', { class: 'hint', style: 'margin:0' }, '電腦連不上時，手機自動改用手機上的帳本副本，暫停同步；匯率與股價用手機自己的網路更新。可以記帳、修改或刪除交易、新增帳戶／類別／範本、代墊收款、看報表；設定、照片、匯入與備份要等電腦回來。電腦開啟後自動補送變更並回到同步。'),
       on ? locStatusBox : null,
       on ? h('label', { class: 'tally-toggle' }, h('input', { type: 'checkbox', checked: lsGet('pw_local_recur') === '1', onchange: (e) => { lsSet('pw_local_recur', e.target.checked ? '1' : '0'); toast(e.target.checked ? '下次手機改用本機帳本時，到期的定期交易會由手機先記' : '已關閉'); } }),
         h('span', null, '電腦沒開時，到期的定期交易由手機先記（電腦回來後會用同樣的日期自己補記，不會重複）')) : null,

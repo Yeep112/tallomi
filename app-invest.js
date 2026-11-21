@@ -137,7 +137,9 @@ async function viewInvest(view) {
         h('div', { title: t.day_count ? '用現價和前一個交易日的收盤價相比，只算現在還持有的股數' : '還沒有可以比較的前日收盤價（更新股價後就會出現）' },
           h('span', { class: 'label muted' }, '今日漲跌'), t.day_count ? invMove(t.day_pnl, t.day_ret, base) : h('b', { class: 'muted' }, '—')),
         h('div', { title: '累計損益 ＝ 持股的損益試算 ＋ 已實現損益；累計報酬率 ＝ 累計損益 ÷（持股成本 ＋ 已賣出股數的成本）' },
-          h('span', { class: 'label muted' }, '累計報酬（含已實現）'), t.total_ret == null && !t.total_pnl ? h('b', { class: 'muted' }, '—') : invMove(t.total_pnl, t.total_ret, base)))));
+          h('span', { class: 'label muted' }, '累計報酬（含已實現）'), t.total_ret == null && !t.total_pnl ? h('b', { class: 'muted' }, '—') : invMove(t.total_pnl, t.total_ret, base)),
+        t.dividends ? h('div', { title: '累計報酬再加上記錄下來的股利。下面「股利與年化報酬」有每一檔的明細' },
+          h('span', { class: 'label muted' }, '含股利報酬'), invMove(t.total_pnl_div, t.total_ret_div, base)) : null)));
     kids.push(h('p', { class: 'hint inv-note' }, `損益試算是用現價推算的預估值，帳戶餘額與總資產只算「付出成本」。賣出、把錢轉回銀行帳戶之後，實際賺賠才會列入實際資產（已實現損益）。紅色代表賺、綠色代表賠。`,
       '　庫存市值與損益已扣掉預估的賣出手續費和證交稅，數字和券商 App 一致。'));
     if (t.missing_prices) kids.push(h('div', { class: 'banner' }, h('span', null, `有 ${t.missing_prices} 檔還沒有股價（或缺少換算匯率），沒有算進市值。請在下表輸入現價，或到設定頁填匯率。`)));
@@ -197,6 +199,11 @@ async function viewInvest(view) {
           h('tbody', null, rows)))
         : h('div', { class: 'empty' }, h('b', null, '還沒有投資標的'), '按「管理股票」新增，或把帳戶命名成 TSMC、0050、0056、UMC、NVDA 會自動辨識。'),
       held.length ? null : h('p', { class: 'hint' }, '還沒有持股：在下面「買進」登錄，或選「不扣款」登錄原本就持有的股票。')));
+    if (typeof dividendSection === 'function') {
+      const dv = dividendSection(board, inv, () => paintTop()), al = allocSection(board, inv);
+      if (dv) kids.push(dv);
+      if (al) kids.push(al);
+    }
     top.replaceChildren(...kids);
     paintStatus();
   };

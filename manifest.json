@@ -1,13 +1,15 @@
 {
  "app": "pennyworth",
- "version": "1.67.0",
+ "version": "1.68.0",
  "released": "2026-11-21",
- "zip": "Pennyworth-1.67.0.zip",
- "download": "Tallomi-1.67.0.zip",
- "sha256": "ff734c698a4a7f41cdd1daa26bfb2dfb3908dd9a5cd90b404a998523b13195d0",
- "size": 1079720,
+ "zip": "Pennyworth-1.68.0.zip",
+ "download": "Tallomi-1.68.0.zip",
+ "sha256": "c8cb77acb61fb98799b3a9b7ce8151f969fb20b45760291c33c6c7e883621543",
+ "size": 1081830,
  "notes": [
-  "儲蓄目標、股利與年化報酬（XIRR）、資產配置圖、月度回顧；修正首頁淨資產走勢偶爾空白"
+  "幫朋友付直接算成支出；朋友還款算成收入，並可選還到哪個帳戶（預設是上次還的帳戶）",
+  "舊的幫朋友付可在代墊頁一鍵改成新規則",
+  "新增給其他人掃的下載 QR code"
  ],
  "min_version": "0",
  "manual": false,

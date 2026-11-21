@@ -43,6 +43,8 @@ function paletteItems() {
   out.push(['記帳', '記一筆收入', 'income 新增 薪水', () => openQuickAdd({ type: 'income' })]);
   if (activeAccounts().length > 1) out.push(['記帳', '記一筆轉帳', 'transfer 轉帳 轉入 轉出', () => openQuickAdd({ type: 'transfer' })]);
   for (const [r, label] of Object.entries(GO_NAMES)) out.push(['前往', `前往 ${label}`, `${r} 跳到 開啟 頁面`, () => { location.hash = '#/' + r; }]);
+  out.push(['前往', '儲蓄目標', '目標 存錢 goal saving 進度', () => { if (typeof openGoalsManager === 'function') openGoalsManager(); }]);
+  out.push(['前往', '月度回顧', '回顧 上個月 review 每月 異常', () => { if (typeof openReviewDialog === 'function') openReviewDialog(); }]);
   out.push(['設定', '管理分類規則', '分類規則 自動分類 備註 關鍵字 rules', () => goThen('settings', () => openCatRulesEditor())]);
   out.push(['設定', '管理定期交易', '定期 訂閱 房租 固定', () => goThen('settings', () => openRecurringManager())]);
   out.push(['設定', S.hideAll ? '顯示所有金額' : '隱藏所有金額', '隱藏 金額 眼睛 隱私', () => setHideAll(!S.hideAll)]);
