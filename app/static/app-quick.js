@@ -165,3 +165,57 @@ function quickLinkSection() {
           h('code', null, '#/add?type=expense&account=現金&category=早餐&amount=65&note=豆漿'),
           '。type 可用 expense / income / transfer；帳戶與類別用名稱；金額、備註、標籤、date（YYYY-MM-DD）可省略。找不到的帳戶會留空讓你自己選。'))));
 }
+
+// ---- Settings: 分享給其他人 (1.69.0). A QR code and an address that open the download page for other people: phones open the phone version from it,
+// computers get the Windows download. Made on the spot (no network, nothing is sent anywhere). It lives in this file to keep the phone site's file count down.
+function shareQrBlob(text) {
+  return new Promise((ok, no) => {
+    try {
+      const q = qrcode(0, 'M'); q.addData(text); q.make();
+      const img = new Image();
+      img.onload = () => {
+        const n = 1000, cv = h('canvas', { width: n, height: n }), cx = cv.getContext('2d');
+        cx.fillStyle = '#fff'; cx.fillRect(0, 0, n, n); cx.imageSmoothingEnabled = false; cx.drawImage(img, 0, 0, n, n);
+        cv.toBlob((b) => (b ? ok(b) : no(new Error('toBlob'))), 'image/png');
+      };
+      img.onerror = () => no(new Error('svg'));
+      img.src = 'data:image/svg+xml;charset=utf-8,' + encodeURIComponent(q.createSvgTag({ cellSize: 10, margin: 4, scalable: false }));
+    } catch (e) { no(e); }
+  });
+}
+
+function shareQr(url, label) {
+  const box = h('div', { class: 'qr', role: 'img', 'aria-label': `${label}的 QR code` });
+  try { const q = qrcode(0, 'M'); q.addData(url); q.make(); box.innerHTML = q.createSvgTag({ cellSize: 4, margin: 2, scalable: true }); }      // made by the library from the address only
+  catch { box.textContent = '無法產生 QR code，請直接用下面的網址。'; }
+  return box;
+}
+
+function shareSection() {
+  const base = ((S.st && S.st.share_url) || '').replace(/\/+$/, '');
+  if (!base) return null;                                                   // an older saved copy of the state: nothing to show
+  const kinds = [['page', '下載頁（手機＋電腦）', base + '/'], ['phone', '只開手機版', base + '/app/']];
+  let cur = 'page';
+  const box = h('div', { class: 'share-box' });
+  const paint = () => {
+    const [, label, url] = kinds.find((k) => k[0] === cur);
+    box.replaceChildren(
+      h('div', { class: 'seg', role: 'group', 'aria-label': '要分享哪一個' }, kinds.map(([k, l]) => h('button', { type: 'button', 'aria-pressed': String(cur === k), onclick: () => { cur = k; paint(); } }, l))),
+      h('div', { class: 'share-qr' }, shareQr(url, label),
+        h('div', { class: 'share-side' },
+          h('label', { class: 'field' }, h('span', null, '網址'), h('input', { class: 'ql-url share-url', readonly: true, value: url, 'aria-label': `${label}的網址`, onfocus: (e) => e.target.select() })),
+          h('div', { class: 'row-inline' },
+            h('button', { class: 'btn primary', type: 'button', onclick: async () => { toast((await quickCopy(url)) ? '已複製網址' : '複製失敗，請按住上面的網址自行複製', false); } }, '複製網址'),
+            navigator.share ? h('button', { class: 'btn', type: 'button', onclick: () => { navigator.share({ title: 'Tallomi', text: 'Tallomi 個人帳本', url }).catch(() => {}); } }, '分享…') : null,
+            h('button', { class: 'btn', type: 'button', onclick: async () => {
+              try { saveBlob(cur === 'page' ? 'tallomi-download-qr.png' : 'tallomi-phone-qr.png', await shareQrBlob(url)); toast('已下載 QR code 圖片'); } catch { toast('這個瀏覽器無法存成圖片，請直接用截圖', false); }
+            } }, '下載 QR 圖片')))),
+      h('p', { class: 'hint', style: 'margin:0' }, cur === 'page'
+        ? '對方用手機掃，就會開啟下載頁：手機可直接使用，電腦在同一頁下載 Windows 版。'
+        : '對方用手機掃，會直接開啟手機版。第一次開啟約 15 MB。iPhone 請用 Safari，Android 請用 Chrome。'));
+  };
+  paint();
+  return h('section', { class: 'section' }, h('div', { class: 'section-head' }, h('h2', null, '分享給其他人')),
+    h('div', { class: 'rows' }, box,
+      h('p', { class: 'hint', style: 'margin:0' }, '給朋友的是「用戶版」：他們的帳本只存在自己的裝置，不會傳給你，也看不到你的資料。')));
+}

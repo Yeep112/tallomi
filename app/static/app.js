@@ -660,7 +660,7 @@ function txFields(m, redraw, { editing = false } = {}) {
     h('select', { onchange }, choices(cur).map((a) => h('option', { value: a.id, selected: a.id == cur }, `${a.name}（${a.currency}）`))));
   const out = [];
   if (repay) {
-    out.push(h('p', { class: 'hint field grow', style: 'margin:0' }, `${m.counterparty ? m.counterparty + '　' : ''}${m.settle_from ? m.settle_from + ' → ' : ''}還到哪個帳戶：視為轉帳，不算收入。要改入帳帳戶，從下面選。`));
+    out.push(h('p', { class: 'hint field grow', style: 'margin:0' }, `${m.counterparty ? m.counterparty + '　' : ''}${m.settle_from ? m.settle_from + ' → ' : ''}還到哪個帳戶：這筆收款跟著原來的代墊算（${m.no_stats ? '不算收入' : '算成收入'}）。要改入帳帳戶，從下面選。`));
   } else if (!editing || m.type !== 'adjust') {
     out.push(h('div', { class: 'seg', role: 'group', 'aria-label': '交易類型' },
       ['expense', 'income', 'transfer'].map((t) => h('button', {
@@ -963,7 +963,7 @@ function amountCell(t, viewer) {
     const cross = t.currency !== t.to_currency;
     return h('span', { class: 'num' }, `${num(t.amount, t.currency)} ${t.currency}`, cross ? h('span', { class: 'muted' }, ` → ${num(t.to_amount, t.to_currency)} ${t.to_currency}`) : null);
   }
-  if (t.settle_of) return h('span', { class: 'num', title: '朋友還款：視為轉帳' }, `${num(t.amount, t.currency)} ${t.currency}`);
+  if (t.settle_of && t.no_stats) return h('span', { class: 'num', title: '報帳入帳：不算收入' }, `${num(t.amount, t.currency)} ${t.currency}`);
   const signed = t.type === 'expense' ? -t.amount : t.amount;
   return money(signed, t.currency, { sign: true, tone: true });
 }
@@ -1015,8 +1015,8 @@ function txRowEl(t, withBalance, viewer, sel, days) {
     ...(days ? { 'data-of': t.time.slice(0, 10), hidden: days.folded.has(t.time.slice(0, 10)) } : {}) },
     sel ? h('td', { class: 'c-sel' }, h('input', { type: 'checkbox', checked: S.sel.has(t.id), 'aria-label': `選取 ${shortTime(t.time)} ${t.note || t.category || ''}`, onchange: (e) => { if (e.target.checked) S.sel.add(t.id); else S.sel.delete(t.id); e.target.closest('tr').classList.toggle('picked', e.target.checked); sel.changed(); } })) : null,
     h('td', { class: 'when', title: shortTime(t.time) }, h('span', { class: 'yr' }, t.time.slice(0, 5)), shortTime(t.time).slice(5)),
-    h('td', { class: 'c-kind' }, t.settle_of ? h('span', { class: 'kind transfer', title: '朋友或公司還你的錢：視為轉帳，不是收入，也不算進收支統計' }, '轉帳') : h('span', { class: `kind ${t.type}` }, TYPE_LABEL[t.type])),
-    h('td', { class: 'c-cat' }, t.type === 'transfer' || t.type === 'adjust' || t.settle_of ? typeChip(t.settle_of ? 'transfer' : t.type)
+    h('td', { class: 'c-kind' }, t.settle_of && t.no_stats ? h('span', { class: 'kind transfer', title: '公司還你的報帳款：視為轉帳，不是收入，也不算進收支統計' }, '轉帳') : h('span', { class: `kind ${t.type}`, title: t.settle_of ? '朋友還你的錢：算成收入' : '' }, TYPE_LABEL[t.type])),
+    h('td', { class: 'c-cat' }, t.type === 'transfer' || t.type === 'adjust' || (t.settle_of && t.no_stats) ? typeChip(t.settle_of ? 'transfer' : t.type)
       : h('button', { class: 'chip-btn', type: 'button', title: `更換「${t.category || '未分類'}」的圖示`, 'aria-label': `更換「${t.category || '未分類'}」的圖示`, onclick: () => editCategoryIcon(t.category || '未分類') }, catChip(t.category || '未分類')),
       h('span', { class: 'cat-name' }, t.category || '')),
     h('td', { class: 'note', title: t.note }, t.note, advBadge(t), receiptMark(t), tagChips(t)),
@@ -1615,7 +1615,7 @@ const SETTINGS_GROUPS = [
   ['同步', ['手機連線', '這支手機', 'Google 試算表', '離線模式'], 'sheets google 同步 金鑰 試算表 手機 tailscale 離線'],
   ['快速記帳', ['快速記帳'], '快速記帳 網址 連結 捷徑 shortcut 主畫面 iphone android qr code 書籤'],
   ['資料', ['匯入資料', '匯出與備份', '備份與匯出', 'PIN 鎖', '危險區'], '匯入 匯出 csv 備份 還原 pin 密碼 鎖 清除 刪除'],
-  ['關於', ['軟體更新', '意見回饋', '診斷紀錄', '關於這個版本', '切換版本'], '版本 更新 回饋 意見 診斷 紀錄 錯誤 閃退 當機 卡頓 記憶體 開機 自動啟動 結束 關閉'],
+  ['關於', ['分享給其他人', '軟體更新', '意見回饋', '診斷紀錄', '關於這個版本', '切換版本'], '分享 朋友 其他人 下載 用戶版 qr code 網址 版本 更新 回饋 意見 診斷 紀錄 錯誤 閃退 當機 卡頓 記憶體 開機 自動啟動 結束 關閉'],
 ];
 function groupSettings(nodes) {
   const titleOf = (n) => { const h2 = n.querySelector && n.querySelector('.section-head h2'); return h2 ? h2.textContent.trim() : ''; };
@@ -1781,14 +1781,16 @@ async function settingsBody(view) {
       h('div', { class: 'rows' }, h('p', { class: 'hint', style: 'margin:0' }, '你正在用手機連到家裡電腦上的 Tallomi。Google 試算表、匯入匯出、備份與手機管理只能在電腦上操作。'),
         h('p', { class: 'hint', style: 'margin:0' }, '鍵盤打不出來？', h('a', { href: 'static/kb-a.html' }, '測試頁 A（完全沒有樣式）'), '　', h('a', { href: 'static/kb-b.html' }, '測試頁 B（套用 Tallomi 樣式）'), '　', h('a', { href: 'static/kb-c.html' }, '測試頁 C（對話框）'))))); 
     view.append(quickLinkSection());
+    { const sh = shareSection(); if (sh) view.append(sh); }
     view.append(locSection());
     if (LOC.mode === 'pc') view.append(offlineSection());
     view.append(diagSection());
     return;
   }
-  if (st.phone) { await phoneSettings(view); view.append(quickLinkSection()); view.append(diagSection()); return; }       // the phone version: no folders, Google connection, tray or shutdown
+  if (st.phone) { await phoneSettings(view); view.append(quickLinkSection()); { const sh = shareSection(); if (sh) view.append(sh); } view.append(diagSection()); return; }       // the phone version: no folders, Google connection, tray or shutdown
   await settingsPhone(view);
   view.append(quickLinkSection());
+  { const sh = shareSection(); if (sh) view.append(sh); }
 
   // --- google sheets
   const keyIn = h('input', { value: sh.key, placeholder: '貼上試算表網址或 ID', style: 'min-width:min(340px,100%)', 'aria-label': '試算表網址或 ID' });

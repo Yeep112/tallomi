@@ -23,7 +23,7 @@ function advanceField(m, redraw) {
       return;
     }
     m.advance = e.target.value;
-    if (m.advance) { m.no_budget = true; m.no_stats = true; } else { m.counterparty = ''; m.no_budget = false; m.no_stats = false; }     // sensible defaults, still changeable
+    if (m.advance) { const claim = m.advance === 'claim'; m.no_budget = claim; m.no_stats = claim; } else { m.counterparty = ''; m.no_budget = false; m.no_stats = false; }     // sensible defaults, still changeable
     redraw();
   } }, [['', '自己的支出'], ['friend', '幫朋友付（之後向他收）'], ['split', '幫大家付，每人各自還（分帳）…'], ['claim', '先付款，之後報帳']].map(([v, l]) => h('option', { value: v, selected: v === kind }, l)));
   const out = [h('label', { class: 'field half' }, h('span', null, '這筆是'), pick)];
@@ -42,14 +42,14 @@ function advanceField(m, redraw) {
       out.push(h('div', { class: 'field grow adv-auto' },
         h('label', { class: 'tally-toggle' }, h('input', { type: 'checkbox', checked: on, onchange: (e) => { m.auto_settle = e.target.checked ? ((same.find((a) => a.id === m.account_id) || same[0] || {}).id || '') : ''; redraw(); } }),
           h('span', null, '到了預計收回日，自動記成已收款（不用再按「收款」）')),
-        on ? h('label', { class: 'adv-auto-acct' }, h('span', { class: 'hint' }, '入帳到　'), h('select', { 'aria-label': '自動入帳的帳戶', onchange: (e) => { m.auto_settle = +e.target.value; } },
+        on ? h('label', { class: 'adv-auto-acct' }, h('span', { class: 'hint' }, '還到哪個帳戶　'), h('select', { 'aria-label': '自動入帳的帳戶', onchange: (e) => { m.auto_settle = +e.target.value; } },
           same.map((a) => h('option', { value: a.id, selected: a.id === Number(m.auto_settle) }, a.name)))) : null,
-        on ? h('span', { class: 'hint' }, `${m.due} 當天（或之後第一次打開程式時）會自動記一筆收款，這筆就結案。收款不算收入。`) : null));
+        on ? h('span', { class: 'hint' }, `${m.due} 當天（或之後第一次打開程式時）會自動記一筆收款，這筆就結案。${m.no_stats ? '收款不算收入。' : '收款會算成收入。'}`) : null));
     }
     out.push(h('div', { class: 'field grow adv-opts' },
       h('label', { class: 'tally-toggle' }, h('input', { type: 'checkbox', checked: !!m.no_budget, onchange: (e) => { m.no_budget = e.target.checked; } }), h('span', null, '不計入預算')),
       h('label', { class: 'tally-toggle' }, h('input', { type: 'checkbox', checked: !!m.no_stats, onchange: (e) => { m.no_stats = e.target.checked; } }), h('span', null, '不計入收支統計與報表')),
-      h('span', { class: 'hint' }, '錢還是會從帳戶扣掉；對方還錢時，到「代墊」頁記一筆收款就會沖銷，收款不會算成收入。')));
+      h('span', { class: 'hint' }, (m.no_stats ? '錢還是會從帳戶扣掉；對方還錢時，到「代墊」頁記一筆收款就會沖銷，收款不會算成收入。' : '錢直接算成你的支出；對方還錢時，到「代墊」頁記一筆收款，收款會算成收入，並進你選的帳戶。'))));
   }
   return h('div', { class: 'adv-box grow' }, ...out);
 }
@@ -87,21 +87,27 @@ function advBadge(t) {
 }
 
 // ---- record a payment that came back
+// which account each person's money usually lands in, so the next repayment starts there
+function repayMemory() { try { return JSON.parse(localStorage.getItem('pw_repay_acct') || '{}') || {}; } catch (e) { return {}; } }
+function rememberRepay(who, id) { try { const m = repayMemory(); m[who] = id; localStorage.setItem('pw_repay_acct', JSON.stringify(m)); } catch (e) { /* private mode: fine */ } }
 function openSettle(it) {
   const same = activeAccounts().filter((a) => a.currency === it.currency);
-  const m = { amount: String(it.remaining), account_id: same.find((a) => a.id === it.account_id) ? it.account_id : (same[0] || {}).id, time: nowLocal().slice(0, 16), note: '' };
+  const last = (it.payments || []).slice().sort((a, b) => (a.time < b.time ? 1 : -1))[0], mem = repayMemory()[it.counterparty];
+  const pick = [mem, last && last.account_id, it.account_id].find((id) => id != null && same.some((a) => a.id === id));
+  const m = { amount: String(it.remaining), account_id: pick != null ? pick : (same[0] || {}).id, time: nowLocal().slice(0, 16), note: '' };
   openDialog({
     title: `${it.advance === 'friend' ? '收回' : '報帳入帳'}：${it.counterparty}`,
     body: h('div', { class: 'rows', style: 'padding:0;max-width:none' },
       h('p', { class: 'hint', style: 'margin:0' }, `${shortTime(it.time)}　${it.note || it.category}　墊了 ${num(it.amount, it.currency)} ${it.currency}，已收 ${num(it.repaid, it.currency)}，還剩 ${num(it.remaining, it.currency)}。`),
       h('div', { class: 'grid2' },
         h('label', { class: 'field' }, h('span', null, `這次收到（${it.currency}）`), h('input', { class: 'amt', inputmode: 'decimal', autocomplete: 'off', value: m.amount, 'aria-label': '收到的金額', oninput: (e) => { m.amount = e.target.value; } })),
-        h('label', { class: 'field' }, h('span', null, '入帳到'), h('select', { onchange: (e) => { m.account_id = +e.target.value; } }, same.map((a) => h('option', { value: a.id, selected: a.id === m.account_id }, a.name)))),
+        h('label', { class: 'field' }, h('span', null, '還到哪個帳戶'), h('select', { 'aria-label': '還到哪個帳戶', onchange: (e) => { m.account_id = +e.target.value; } }, same.map((a) => h('option', { value: a.id, selected: a.id === m.account_id }, a.name)))),
         h('label', { class: 'field' }, h('span', null, '時間'), h('input', { type: 'datetime-local', value: m.time, oninput: (e) => { m.time = e.target.value; } })),
         h('label', { class: 'field' }, h('span', null, '備註（可不填）'), h('input', { autocomplete: 'off', maxlength: 200, oninput: (e) => { m.note = e.target.value; } }))),
-      h('p', { class: 'hint', style: 'margin:0' }, '分幾次收也可以，收齊後這筆就會移到「已結清」。收款會增加帳戶餘額，但不會算成收入。')),
+      h('p', { class: 'hint', style: 'margin:0' }, `分幾次收也可以，收齊後這筆就會移到「已結清」。收款會增加你選的帳戶的餘額，${it.no_stats ? '但不會算成收入（這筆代墊沒有計入收支統計）。' : '並算成一筆收入（代墊當初算成支出，收回來就抵回去）。'}`)),
     primary: { label: '記下收款', run: async () => {
       const r = await api('POST', `/api/advances/${it.id}/settle`, { amount: m.amount, account_id: m.account_id, time: m.time || undefined, note: m.note });
+      rememberRepay(it.counterparty, m.account_id);
       await afterChange(r.closed ? '已收齊，這筆結清了' : '已記下收款');
     } },
   });
@@ -121,10 +127,19 @@ async function viewAdvances(view) {
   const items = d.items.filter((x) => !kindF || x.advance === kindF);
   const bills = kindF === 'claim' ? [] : (d.bills || []);                  // split bills are always paid-for-friends
   const money1 = (list) => list.map((r) => `${num(r.amount, r.currency)} ${r.currency}`).join('、');
-  const intro = pageIntro('幫朋友先付錢，或自己先墊、之後要報帳的花費，記在這裡追蹤。一桌人一起吃飯由你先付，按「分帳」一次記下每個人的份；對方還錢時按「收款」，選還到哪個帳戶（視為轉帳，不算收入）；記錯了，在收款那一行直接改帳戶。報帳可以設預計收到款項的日期，到那天自動記成已收款。逾期會在這裡、總覽和左邊選單提醒。');
+  const intro = pageIntro('幫朋友先付錢，或自己先墊、之後要報帳的花費，記在這裡追蹤。一桌人一起吃飯由你先付，按「分帳」一次記下每個人的份；對方還錢時按「收款」，選還到哪個帳戶（幫朋友付的算成支出，收回來算成收入；先付款待報帳的兩邊都不算）；記錯了，在收款那一行直接改帳戶。報帳可以設預計收到款項的日期，到那天自動記成已收款。逾期會在這裡、總覽和左邊選單提醒。');
   view.append(h('div', { class: 'page-head' }, h('div', null, h('h1', null, '代墊與報帳', eyeButton('advances'), intro.btn),
     intro.p),
     h('div', { class: 'page-actions' }, h('button', { class: 'btn primary', type: 'button', onclick: () => openBillDialog({}) }, '＋ 分帳'))));
+  if (d.uncounted_friends) {
+    view.append(h('section', { class: 'section adv-convert' }, h('p', { class: 'hint', style: 'margin:0 0 .5rem' },
+      `有 ${d.uncounted_friends} 筆「幫朋友付」是用舊規則記的（不計入收支統計與預算）。現在幫朋友付直接算成你的支出，朋友還錢時算成收入。要把舊的也改成一樣嗎？已收的款項會跟著一起改。`),
+      h('button', { class: 'btn sm', type: 'button', onclick: async () => {
+        const ok = await confirmBox({ title: '改成直接計入？', confirmLabel: '全部改成計入', message: h('p', null, `${d.uncounted_friends} 筆幫朋友付的款項會改成計入收支統計與預算，已收回的款項也會算成收入。之後可以逐筆再勾回「不計入」。`) });
+        if (!ok) return;
+        try { const r = await api('POST', '/api/advances/count-friends', { on: true }); await afterChange(`已改好 ${r.changed} 筆`); } catch (e) { fail(e); }
+      } }, '全部改成計入')));
+  }
   if (tab === 'open') {
     const parties = d.by_party.filter((g) => !kindF || g.advance === kindF);
     view.append(h('section', { class: 'section' }, parties.length
@@ -191,7 +206,7 @@ async function viewAdvances(view) {
         return h('li', null,
           h('span', { class: 'pay-line', role: 'button', tabindex: '0', title: '點一下編輯這筆收款', onclick: () => openTxDialog(p), onkeydown: (e) => { if (e.key === 'Enter') openTxDialog(p); } },
             `${shortTime(p.time)}　收到 ${num(p.amount, p.currency)} ${p.currency}　${p.settle_from ? p.settle_from + ' → ' : ''}`),
-          choices.length > 1 || (choices.length === 1 && choices[0].id !== p.account_id) ? h('select', { class: 'pay-acct', 'aria-label': `${shortTime(p.time)} 這筆收款還到哪個帳戶`, title: '還到哪個帳戶（視為轉帳）',
+          choices.length > 1 || (choices.length === 1 && choices[0].id !== p.account_id) ? h('select', { class: 'pay-acct', 'aria-label': `${shortTime(p.time)} 這筆收款還到哪個帳戶`, title: '還到哪個帳戶',
             onchange: (e) => { const to = +e.target.value; if (to !== p.account_id) moveRepay(p, to); } },
             choices.map((a) => h('option', { value: a.id, selected: a.id === p.account_id }, a.name))) : h('span', null, p.account),
           h('button', { class: 'btn sm ghost', type: 'button', onclick: () => delPay(p) }, '刪除'));
