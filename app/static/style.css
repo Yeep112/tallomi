@@ -1436,6 +1436,18 @@ tr.vs td { display: block; width: 100%; }
   .share-side { flex-basis: 100%; }
 }
 
+/* 待確認 (1.70.0) */
+.banner.inbox-banner { margin-top: 10px; }
+.inbox-list { display: grid; gap: 8px; }
+.inbox-row { display: grid; grid-template-columns: minmax(0, 1fr) auto auto; align-items: center; gap: 6px 12px; padding: 10px 2px; border-bottom: 1px solid var(--line-2); }
+.inbox-main { display: grid; gap: 2px; min-width: 0; }
+.inbox-main b { overflow-wrap: anywhere; }
+.inbox-amt { font-weight: 600; text-align: right; }
+@media (max-width: 720px), (max-height: 500px) and (orientation: landscape) and (pointer: coarse) {
+  .inbox-row { grid-template-columns: minmax(0, 1fr) auto; }
+  .inbox-row .row-inline { grid-column: 1 / -1; justify-content: flex-end; }
+}
+
 /* category rules editor (1.62.0) */
 .rule-list { display: flex; flex-direction: column; gap: 10px; }
 .rule-row { border: 1px solid var(--line-2); border-radius: 10px; padding: 10px 12px; }

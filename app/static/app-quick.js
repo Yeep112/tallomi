@@ -25,6 +25,7 @@ function quickParse(hash) {
     account: get('account', 40), to: get('to', 40), category: get('category', 60), note: get('note', 500), tags: get('tags', 200),
     amount: /^\d+(\.\d+)?$/.test(amount) && Number(amount) > 0 ? amount : '',
     date,
+    inbox: ['1', 'true', 'yes', 'on'].includes(get('inbox', 6).toLowerCase()), merchant: get('merchant', 80), card: get('card', 60), amountRaw: get('amount', 40),
   };
 }
 // the account a link names: its exact name (any case), else its number, else a name that contains the words (only when that is unambiguous)
@@ -49,9 +50,11 @@ function quickBuild(base, g) {
 // Open the form the link describes. Returns false when there is nothing to open it on (still starting, first-run wizard, no account yet).
 function quickLinkOpen(hash) {
   if (!S.st || S.st.onboarding) return false;
+  const p = quickParse(hash);
+  if (p.inbox) { inboxArrive(p).catch(fail); return true; }                // from a Shortcut: it waits in 待確認, nothing is recorded yet
   const pool = activeAccounts();
   if (!pool.length) { toast('還沒有帳戶，請先到「帳戶」新增一個', true); return false; }
-  const p = quickParse(hash), seed = {}, unknown = [];
+  const seed = {}, unknown = [];
   const from = p.account ? quickAccount(p.account, pool) : null;
   if (p.account && !from) unknown.push(`帳戶「${p.account}」`);
   if (from) seed.account_id = from.id;
@@ -218,4 +221,98 @@ function shareSection() {
   return h('section', { class: 'section' }, h('div', { class: 'section-head' }, h('h2', null, '分享給其他人')),
     h('div', { class: 'rows' }, box,
       h('p', { class: 'hint', style: 'margin:0' }, '給朋友的是「用戶版」：他們的帳本只存在自己的裝置，不會傳給你，也看不到你的資料。')));
+}
+
+
+// ---- 待確認 (1.70.0): what arrives by itself (a Shortcut after an Apple Pay payment, a Back Tap …) waits here until you pick the category
+// A link with inbox=1 stores one item and shows a toast; it never records anything. Items count nowhere until confirmed (server: app/inbox.py).
+const INBOX_MEM = 'pw_inbox_acct';                                              // which account each card went to last time, per card name
+const inboxMem = () => { try { const v = JSON.parse(localStorage.getItem(INBOX_MEM) || '{}'); return v && typeof v === 'object' ? v : {}; } catch { return {}; } };
+function inboxRemember(card, id) {
+  if (!card || !id) return;
+  try { const m = inboxMem(); m[card] = id; localStorage.setItem(INBOX_MEM, JSON.stringify(m)); } catch { /* storage not available: asked again next time */ }
+}
+// the account for a card name: the one chosen last time, else a name match (either way round) when it is unambiguous
+function inboxAccount(card, pool) {
+  if (!card) return null;
+  const mem = inboxMem()[card], keep = mem && pool.find((a) => a.id === mem);
+  if (keep) return keep;
+  const hit = quickAccount(card, pool);
+  if (hit) return hit;
+  const low = card.toLowerCase(), within = pool.filter((a) => a.name.length >= 2 && low.includes(a.name.toLowerCase()));
+  return within.length === 1 ? within[0] : null;
+}
+async function inboxArrive(p) {
+  const res = await api('POST', '/api/inbox', { cid: newClientId(), amount: p.amountRaw, merchant: p.merchant, card: p.card, note: p.note, source: 'link' });
+  await refresh();
+  const n = (S.st.inbox || []).length;
+  toast(res.duplicate ? `這筆已經在「待確認」了（共 ${n} 筆）` : `已放進「待確認」（共 ${n} 筆），到首頁選類別就會記下`, false);
+}
+function inboxBanner() {
+  const n = (S.st.inbox || []).length;
+  if (!n) return null;
+  return h('div', { class: 'banner inbox-banner' },
+    h('span', null, h('b', null, `有 ${n} 筆待確認：`), '自動帶入的付款，選好類別才會正式記下'),
+    h('button', { class: 'btn sm primary', type: 'button', onclick: () => openInbox() }, '查看並確認'));
+}
+function inboxConfirm(it) {
+  const pool = activeAccounts(), acc = inboxAccount(it.card, pool);
+  const seed = {};
+  if (acc) seed.account_id = acc.id;
+  if (it.amount) seed.amount = it.amount;
+  if (it.merchant || it.note) seed.note = [it.merchant, it.note].filter(Boolean).join(' ');
+  openQuickAdd({ type: 'expense', date: it.created_at.slice(0, 10), seed, title: '確認這筆待確認的付款',
+    onSaved: async (m) => {
+      await api('POST', '/api/inbox/remove', { cid: it.cid });
+      inboxRemember(it.card, m.account_id);
+    } });
+}
+function openInbox() {
+  const items = S.st.inbox || [];
+  const row = (it) => h('div', { class: 'inbox-row' },
+    h('div', { class: 'inbox-main' },
+      h('b', null, it.merchant || '（沒有帶入店名）'),
+      h('span', { class: 'hint' }, [shortTime(it.created_at), it.card].filter(Boolean).join('・'))),
+    h('div', { class: 'inbox-amt num' }, it.amount ? num(+it.amount, S.st.base) : '金額沒帶入'),
+    h('div', { class: 'row-inline' },
+      h('button', { class: 'btn sm primary', type: 'button', onclick: () => { dlg.close(); inboxConfirm(it); } }, '確認'),
+      h('button', { class: 'btn sm ghost', type: 'button', 'aria-label': `刪除 ${it.merchant || '這筆'}`, onclick: async () => {
+        try { await api('POST', '/api/inbox/remove', { cid: it.cid }); await refresh(); dlg.close(); if ((S.st.inbox || []).length) openInbox(); } catch (e) { fail(e); } } }, '刪除')));
+  const dlg = openDialog({ title: `待確認（${items.length}）`, wide: true,
+    extraFoot: items.length > 1 ? h('button', { class: 'btn ghost', type: 'button', onclick: async () => {
+      if (!(await confirmBox({ title: '全部刪除？', message: `這 ${items.length} 筆待確認都不記下，直接刪掉。`, confirmLabel: '全部刪除', danger: true }))) return;
+      try { await api('POST', '/api/inbox/clear'); dlg.close(); await refresh(); } catch (e) { fail(e); } } }, '全部刪除') : null,
+    body: h('div', { class: 'inbox-list' }, items.length ? items.map(row) : h('p', { class: 'hint' }, '沒有待確認的付款。')) });
+  return dlg;
+}
+
+// ---- Settings: 自動記帳（待確認）— how to set up Back Tap and the Apple Pay automation, and a way to try it
+function inboxSection() {
+  const n = (S.st.inbox || []).length;
+  const standalone = !!(navigator.standalone || (window.matchMedia && matchMedia('(display-mode: standalone)').matches));
+  const tpl = async () => (await quickBase()) + '#/add?inbox=1&amount=&merchant=&card=';
+  return h('section', { class: 'section' }, h('div', { class: 'section-head' }, h('h2', null, '自動記帳（待確認）')),
+    h('div', { class: 'rows' },
+      h('p', { class: 'hint', style: 'margin:0' }, '用 iPhone 的「背面輕點」或「Apple Pay 付款後自動執行」把付款送進來。送來的付款不會直接記下，會先放進「待確認」，你點一下、選好類別，才算正式一筆。'),
+      S.st.phone && standalone ? h('div', { class: 'banner late' }, h('span', null,
+        h('b', null, '你正在用主畫面上的 App：'), '捷徑會用 Safari 打開網址，而 Safari 和主畫面 App 的帳本是分開的，付款會進到 Safari 那一份。要用自動記帳，請固定用 Safari 開 Tallomi（不要加到主畫面），或改用和電腦配對的手機。')) : null,
+      h('div', { class: 'row-inline' },
+        h('button', { class: 'btn primary', type: 'button', onclick: () => openInbox() }, n ? `查看待確認（${n}）` : '查看待確認'),
+        h('button', { class: 'btn', type: 'button', onclick: () => inboxArrive({ amountRaw: '120', merchant: '測試商店', card: '', note: '' }).catch(fail) }, '送一筆測試'),
+        h('button', { class: 'btn', type: 'button', onclick: async () => { toast((await quickCopy(await tpl())) ? '已複製網址' : '複製失敗', false); } }, '複製自動記帳網址')),
+      h('details', null, h('summary', { class: 'hint', style: 'cursor:pointer' }, '設定「背面輕點」（輕敲 iPhone 背面兩下就記一筆）'),
+        h('ol', { class: 'steps' },
+          h('li', null, '先在上面「快速記帳」建立網址（帳戶、類別、金額可以先填好常用的），複製起來。'),
+          h('li', null, '打開「捷徑」App →「＋」→ 加入動作「打開 URL」→ 貼上網址，名稱取「記一筆」。'),
+          h('li', null, '到「設定 → 輔助使用 → 觸控 → 背面輕點」，選「輕點兩下」或「輕點三下」，再選剛才的捷徑「記一筆」。'),
+          h('li', null, '輕敲背面就會開出填好的「記一筆」表單。（需要 iPhone 8 以上、iOS 14 以上；裝了厚的保護殼可能要敲重一點。）'))),
+      h('details', null, h('summary', { class: 'hint', style: 'cursor:pointer' }, '設定「Apple Pay 付款後自動送進待確認」（iOS 17 以上）'),
+        h('ol', { class: 'steps' },
+          h('li', null, '先按上面的「複製自動記帳網址」。'),
+          h('li', null, '打開「捷徑」App →「自動化」→「＋」→ 選「交易」（英文介面是 Transaction）→ 選要監看的卡片 → 選「立即執行」。'),
+          h('li', null, '加入動作「打開 URL」，貼上網址，再在 amount= 後面插入「捷徑輸入」的「金額」、merchant= 後面插「商家」、card= 後面插「卡片」。'),
+          h('li', null, '之後每次用 Apple Pay 付款，iPhone 會自動打開這個網址，Tallomi 把它放進「待確認」；付款當下會短暫跳出 Safari。'),
+          h('li', null, '店名含 & # + 這類符號時，網址會被切斷；在捷徑裡先用「URL 編碼」動作處理「商家」再放進網址即可（一般店名不用）。')),
+        h('p', { class: 'hint' }, '要知道的限制：「錢包」App 需要允許使用行動數據，自動化才會觸發。iPhone 偶爾會把金額傳成 0、或店名留空，Tallomi 照樣收下，確認時再補。這是 iPhone 自動化本身的限制，偶爾會漏掉一筆，所以月底對帳時仍建議看一眼。'),
+        h('p', { class: 'hint' }, '電腦配對的手機：帳本存在電腦上，捷徑開 Safari 沒有問題（第一次要輸入配對碼，只需一次）。用戶版手機：帳本存在手機瀏覽器裡，請固定用 Safari 使用。'))));
 }

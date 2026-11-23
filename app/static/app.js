@@ -920,7 +920,7 @@ async function viewOverview(view) {
     review: () => (typeof reviewBlock === 'function' ? reviewBlock() : null),
     goals: () => (typeof goalsBlock === 'function' ? goalsBlock() : null),
     networth: () => (typeof netWorthTrend === 'function' ? netWorthTrend({ compact: true }) : null),
-    reminders: () => [recurringBanner(), owedBanner()],
+    reminders: () => [recurringBanner(), owedBanner(), inboxBanner()],
     tiles: () => overviewTiles(),
     budget: () => budgetCard(),
     accounts: () => homeAccounts(ov, base),
@@ -1613,7 +1613,7 @@ const SETTINGS_GROUPS = [
   ['外觀', ['外觀'], '主題 顏色 配色 隱藏 金額 眼睛'],
   ['帳務', ['類別', '分類規則', '幣別與匯率', '定期交易'], '類別 分類規則 自動 規則 匯率 幣別 主要幣別 固定 訂閱 房租'],
   ['同步', ['手機連線', '這支手機', 'Google 試算表', '離線模式'], 'sheets google 同步 金鑰 試算表 手機 tailscale 離線'],
-  ['快速記帳', ['快速記帳'], '快速記帳 網址 連結 捷徑 shortcut 主畫面 iphone android qr code 書籤'],
+  ['快速記帳', ['快速記帳', '自動記帳（待確認）'], '快速記帳 網址 連結 捷徑 shortcut 主畫面 iphone android qr code 書籤 待確認 自動記帳 背面輕點 apple pay 交易 自動化 收件匣'],
   ['資料', ['匯入資料', '匯出與備份', '備份與匯出', 'PIN 鎖', '危險區'], '匯入 匯出 csv 備份 還原 pin 密碼 鎖 清除 刪除'],
   ['關於', ['分享給其他人', '軟體更新', '意見回饋', '診斷紀錄', '關於這個版本', '切換版本'], '分享 朋友 其他人 下載 用戶版 qr code 網址 版本 更新 回饋 意見 診斷 紀錄 錯誤 閃退 當機 卡頓 記憶體 開機 自動啟動 結束 關閉'],
 ];
@@ -1780,16 +1780,16 @@ async function settingsBody(view) {
     view.append(h('section', { class: 'section' }, h('div', { class: 'section-head' }, h('h2', null, '這支手機')),
       h('div', { class: 'rows' }, h('p', { class: 'hint', style: 'margin:0' }, '你正在用手機連到家裡電腦上的 Tallomi。Google 試算表、匯入匯出、備份與手機管理只能在電腦上操作。'),
         h('p', { class: 'hint', style: 'margin:0' }, '鍵盤打不出來？', h('a', { href: 'static/kb-a.html' }, '測試頁 A（完全沒有樣式）'), '　', h('a', { href: 'static/kb-b.html' }, '測試頁 B（套用 Tallomi 樣式）'), '　', h('a', { href: 'static/kb-c.html' }, '測試頁 C（對話框）'))))); 
-    view.append(quickLinkSection());
+    view.append(quickLinkSection(), inboxSection());
     { const sh = shareSection(); if (sh) view.append(sh); }
     view.append(locSection());
     if (LOC.mode === 'pc') view.append(offlineSection());
     view.append(diagSection());
     return;
   }
-  if (st.phone) { await phoneSettings(view); view.append(quickLinkSection()); { const sh = shareSection(); if (sh) view.append(sh); } view.append(diagSection()); return; }       // the phone version: no folders, Google connection, tray or shutdown
+  if (st.phone) { await phoneSettings(view); view.append(quickLinkSection(), inboxSection()); { const sh = shareSection(); if (sh) view.append(sh); } view.append(diagSection()); return; }       // the phone version: no folders, Google connection, tray or shutdown
   await settingsPhone(view);
-  view.append(quickLinkSection());
+  view.append(quickLinkSection(), inboxSection());
   { const sh = shareSection(); if (sh) view.append(sh); }
 
   // --- google sheets

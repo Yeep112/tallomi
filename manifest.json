@@ -1,14 +1,15 @@
 {
  "app": "pennyworth",
- "version": "1.69.0",
- "released": "2026-11-21",
- "zip": "Pennyworth-1.69.0.zip",
- "download": "Tallomi-1.69.0.zip",
- "sha256": "3b80679ff002d64388026627819a2660b1a674c3b4de23e22be991e1fa696f2e",
- "size": 1083423,
+ "version": "1.70.0",
+ "released": "2026-11-23",
+ "zip": "Pennyworth-1.70.0.zip",
+ "download": "Tallomi-1.70.0.zip",
+ "sha256": "1a0f8bd9a2ebf3af48fe629a14585ded590a19569c1bc72f11aca32d770642c1",
+ "size": 1089630,
  "notes": [
-  "設定頁新增「分享給其他人」：QR code、下載網址，可複製、分享或下載 QR 圖片",
-  "幫朋友付直接算成支出；朋友還款算成收入，並可選還到哪個帳戶"
+  "新增「待確認」收件匣：自動送來的付款先放進待確認，選好類別按「記下」才算正式",
+  "設定頁新增「自動記帳（待確認）」：iPhone 背面輕點、Apple Pay 付款後自動執行的設定步驟與測試按鈕",
+  "手機版更新更順：只下載有變動的檔案、新版在背景準備好、更新後第一次開啟不再卡頓"
  ],
  "min_version": "0",
  "manual": false,

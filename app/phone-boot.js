@@ -45,7 +45,11 @@
   // ---- last-seen answers. The program takes a few seconds to wake up on a phone; meanwhile the page can already be drawn from the
   // answers it got last time (a thin bar says they are being refreshed). Only reads are ever answered this way, only while the
   // program is still starting, and never for a book with a PIN lock (a locked book must not show its numbers before the PIN).
-  const BUILD = '1.69.0';
+  const BUILD = '1.70.0';
+  // SHAPE says which form the kept answers have. They survive an update (the first start after an update is drawn at once too) as long as the shape is the
+  // same; it is raised by hand whenever an answer loses or renames a field (tests/test_phone_answers_170.py fails when that happens without it).
+  const SHAPE = 1;
+  const staleOff = () => { try { return localStorage.getItem('pw_stale_off') === BUILD; } catch { return false; } };
   const BC = (() => {
     const MAX = 120, MAX_ONE = 300000;
     const SKIP = /^\/api\/(rev|ping|lock|export|backup|update|sheets|pair|phone|local)\b|[?&]wait=/;
@@ -55,14 +59,14 @@
       try {
         db = await idb();
         const rec = await new Promise((res) => { const r = db.transaction('kv').objectStore('kv').get('answers'); r.onsuccess = () => res(r.result); r.onerror = () => res(null); });
-        if (rec && rec.build === BUILD && rec.lockOff === true) { map = rec.map || {}; lockOff = true; }
+        if (rec && (rec.shape || 1) === SHAPE && rec.lockOff === true && !staleOff()) { map = rec.map || {}; lockOff = true; }
       } catch { db = null; }
     })();
     const save = () => {
       if (!db || dirty) return; dirty = setTimeout(() => {
         dirty = 0;
         const keys = Object.keys(map).sort((a, b) => map[b].t - map[a].t).slice(MAX); keys.forEach((k) => delete map[k]);
-        try { db.transaction('kv', 'readwrite').objectStore('kv').put({ build: BUILD, lockOff, map }, 'answers'); } catch { /* full or closed: no cache this time */ }
+        try { db.transaction('kv', 'readwrite').objectStore('kv').put({ build: BUILD, shape: SHAPE, lockOff, map }, 'answers'); } catch { /* full or closed: no cache this time */ }
       }, 900);
     };
     return {
@@ -86,6 +90,16 @@
   })();
   let engineReady = false;
   window.__phoneStale = 0;
+  // kept answers drawn by a newer page that cannot read them: drop them for this version and start again the plain way (once)
+  const staleBroke = () => {
+    if (engineReady || !window.__phoneStale) return;
+    try { localStorage.setItem('pw_stale_off', BUILD); } catch { /* no storage: the plain start is all there is */ }
+    BC.drop();
+    try { if (sessionStorage.getItem('pw_stale_retry')) return; sessionStorage.setItem('pw_stale_retry', '1'); } catch { /* reload at most once more */ }
+    location.reload();
+  };
+  window.addEventListener('error', staleBroke);
+  window.addEventListener('unhandledrejection', staleBroke);
   window.__phoneReady.then(() => { engineReady = true; }).catch(() => {});
 
   const real = window.fetch.bind(window);
@@ -148,8 +162,10 @@
   window.__phoneWarm = warm;
   window.__phoneReady.then(() => { setTimeout(() => warm.start(), 0); }).catch(() => {});
 
-  // ---- service worker: keeps the program for offline use; a newer version waits until the person agrees
+  // ---- service worker: keeps the program for offline use. A newer version is downloaded in the background (only what changed); it starts when the person
+  // taps the bar, or by itself when the app is put away with nothing open (so the next opening is already on the new version), or at the next start.
   if ('serviceWorker' in navigator) {
+    let mine = null;
     const bar = (reg) => {
       if (document.querySelector('.pw-toastbar')) return;
       const t = document.createElement('div'); t.className = 'pw-toastbar'; t.setAttribute('role', 'status');
@@ -158,13 +174,22 @@
       b.onclick = () => { b.disabled = true; reg.waiting && reg.waiting.postMessage('SKIP_WAITING'); };
       t.append(s, b); document.body.append(t);
     };
+    const quiet = () => !document.querySelector('dialog[open]') && waiting.size === 0 && !document.querySelector('form:focus-within, input:focus, textarea:focus, select:focus');
     navigator.serviceWorker.register(BASE + 'phone-sw.js', { updateViaCache: 'none' }).then((reg) => {
+      mine = reg;
       if (reg.waiting && navigator.serviceWorker.controller) bar(reg);
       reg.addEventListener('updatefound', () => {
         const w = reg.installing;
         if (w) w.addEventListener('statechange', () => { if (w.state === 'installed' && navigator.serviceWorker.controller) bar(reg); });
       });
     }).catch(() => {});
+    let checked = Date.now();
+    document.addEventListener('visibilitychange', () => {
+      if (!mine) return;
+      if (document.hidden) {                                                        // put away: switch now, so the next opening is already on the new version
+        if (mine.waiting && navigator.serviceWorker.controller && quiet()) mine.waiting.postMessage('SKIP_WAITING');
+      } else if (Date.now() - checked > 20 * 60 * 1000) { checked = Date.now(); mine.update().catch(() => {}); }   // a long-running app asks for news now and then
+    });
     let reloading = false;
     navigator.serviceWorker.addEventListener('controllerchange', () => { if (reloading || !window.__pwHadController) return; reloading = true; location.reload(); });
     window.__pwHadController = !!navigator.serviceWorker.controller;
