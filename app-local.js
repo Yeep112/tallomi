@@ -69,7 +69,7 @@ const LOC_LOG = [['POST', /^\/api\/transactions$/], ['PUT', /^\/api\/transaction
   ['POST', /^\/api\/categories$/], ['PUT', /^\/api\/categories$/], ['DELETE', /^\/api\/categories$/], ['PUT', /^\/api\/budgets$/], ['PUT', /^\/api\/category-icons$/],
   ['POST', /^\/api\/icon-library$/], ['DELETE', /^\/api\/icon-library$/],
   ['POST', /^\/api\/templates$/], ['PUT', /^\/api\/templates\/order$/], ['PUT', /^\/api\/templates\/\d+$/], ['DELETE', /^\/api\/templates\/\d+$/],
-  ['POST', /^\/api\/bills$/], ['PUT', /^\/api\/bills\/\d+$/], ['DELETE', /^\/api\/bills\/\d+$/],
+  ['POST', /^\/api\/inbox(\/remove|\/clear)?$/], ['POST', /^\/api\/bills$/], ['PUT', /^\/api\/bills\/\d+$/], ['DELETE', /^\/api\/bills\/\d+$/],
   ['POST', /^\/api\/recurring$/], ['PUT', /^\/api\/recurring\/\d+$/], ['DELETE', /^\/api\/recurring\/\d+$/], ['POST', /^\/api\/recurring\/\d+\/active$/],
   ['PUT', /^\/api\/cat-rules$/], ['POST', /^\/api\/cat-rules\/apply$/], ['POST', /^\/api\/frequent\/(hide|restore)$/],
   ['POST', /^\/api\/exchange$/], ['POST', /^\/api\/invest\/trades$/], ['PUT', /^\/api\/invest\/trades\/\d+$/], ['POST', /^\/api\/invest\/trades\/delete$/], ['DELETE', /^\/api\/invest\/trades\/\d+$/],

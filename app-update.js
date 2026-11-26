@@ -10,6 +10,9 @@ const UPD_TEXT = {
   available: '有新版，但「自動下載」已關閉。', manual: '有新版，但需要重新下載安裝（無法自動更新）。',
 };
 
+const UPD_RESULT = { uptodate: '已是最新版', ready: '有新版，已下載', available: '有新版（自動下載已關）', manual: '有新版（需重新安裝）', error: '檢查失敗', offline: '連不上更新伺服器', downloading: '下載中', checking: '檢查中' };
+function updSource(url) { try { const u = new URL(url); return u.host + u.pathname.replace(/\/$/, ''); } catch (e) { return url || '—'; } }
+
 function updTime(iso) { return iso ? iso.replace('T', ' ').slice(0, 16) : '尚未檢查'; }
 
 async function waitForVersion(version) {
@@ -37,7 +40,27 @@ async function applyUpdate() {
 }
 
 // A thin strip at the top while a new version is waiting.
+function updateFailureBar() {
+  const u = updInfo();
+  const f = u.enabled && u.failure;
+  let bar = document.getElementById('failbar');
+  if (!f || f.seen) { if (bar) bar.remove(); return; }
+  if (!bar) {
+    bar = h('div', { id: 'failbar', class: 'updatebar failbar', role: 'alert' });
+    const main = document.querySelector('main.main');
+    if (main) main.prepend(bar);
+  }
+  bar.replaceChildren(
+    h('span', null, h('b', null, f.kind === 'rollback' ? `新版 ${f.version} 沒有裝成功，已還原到 ${f.back_to}` : `新版 ${f.version} 沒有安裝`), h('br'),
+      h('span', { class: 'muted' }, f.reason + '　你的帳本沒有受到影響；這個版本不會再自動安裝。')),
+    h('button', { class: 'btn sm', onclick: async () => {
+      try { S.st.update = await api('POST', '/api/update/ack'); } catch (e) { bar.remove(); }
+      updateFailureBar();
+    } }, '知道了'));
+}
+
 function updateUpdateBar() {
+  updateFailureBar();
   const u = updInfo();
   let bar = document.getElementById('updatebar');
   const show = u.enabled && (u.state === 'ready' || u.state === 'manual');
@@ -67,6 +90,15 @@ function updateSection() {
     box.replaceChildren(
       h('p', { style: 'margin-top:0' }, h('b', null, `目前版本 ${x.current}`), x.latest && x.latest !== x.current ? `　最新版 ${x.latest}` : '', h('br'),
         h('span', { class: x.state === 'error' ? 'neg' : 'muted' }, status), h('br'), h('span', { class: 'muted' }, `上次檢查：${updTime(x.last_checked)}`)),
+      (() => {
+        const c = x.last_check || {}, f = x.failure;
+        return h('div', { class: 'upd-log' },
+          h('p', { class: 'muted', style: 'margin:4px 0' }, c.at
+            ? `檢查紀錄：${updTime(c.at)}　${UPD_RESULT[c.result] || c.result}${c.latest ? `（最新版 ${c.latest}）` : ''}${c.error ? `　${c.error}` : ''}`
+            : '檢查紀錄：還沒有'),
+          h('p', { class: 'muted', style: 'margin:4px 0;word-break:break-all' }, `更新來源：${updSource(x.source || x.url)}`),
+          f ? h('p', { class: 'neg', style: 'margin:4px 0' }, `上次更新失敗（${updTime(f.at)}）：${f.reason}`) : '');
+      })(),
       (x.notes && x.notes.length && x.latest !== x.current) ? h('ul', { class: 'upd-notes' }, ...x.notes.map((n) => h('li', null, n))) : '',
       h('label', { class: 'tally-toggle' }, h('input', { type: 'checkbox', checked: !!x.auto, onchange: async (e) => {
         try { S.st.update = await api('PUT', '/api/update/settings', { auto: e.target.checked }); paint(); } catch (er) { fail(er); }

@@ -4,7 +4,7 @@
 'use strict';
 
 // ---- add an entry in a dialog (type / category / day already chosen)
-function openQuickAdd({ type = 'expense', category = '', date = '', seed = null, title: given = '' } = {}) {
+function openQuickAdd({ type = 'expense', category = '', date = '', seed = null, title: given = '', onSaved = null } = {}) {
   const first = activeAccounts()[0];
   const m = { type, account_id: S.entry.account_id || (first ? first.id : null), to_account_id: null, amount: '', to_amount: '', category, note: '', tags: pinnedTags(), time: '',
     advance: '', counterparty: '', due: '', no_budget: false, no_stats: false };
@@ -20,7 +20,7 @@ function openQuickAdd({ type = 'expense', category = '', date = '', seed = null,
   draw();
   const title = given || `${date ? date.slice(5).replace('-', '/') + ' ' : ''}記一筆${category ? '：' + category : ''}`;
   openDialog({ title, wide: true, body: holder,
-    primary: { label: '記下', run: async () => { const acctId = m.account_id; await recordEntry(m); S.entry.account_id = acctId; await refresh(); } } });
+    primary: { label: '記下', run: async () => { const acctId = m.account_id; await recordEntry(m); S.entry.account_id = acctId; if (onSaved) { try { await onSaved(m); } catch (e) { fail(e); } } await refresh(); } } });
 }
 
 // ---- the tiles

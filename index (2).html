@@ -93,7 +93,7 @@
   } catch (e) { document.getElementById('qr').textContent = '（無法產生 QR code）'; }
   fetch('manifest.json', { cache: 'no-store' }).then(function (r) { return r.json(); }).then(function (m) {
     var a = document.getElementById('dl');
-    a.href = m.download || m.zip; a.removeAttribute('aria-disabled'); a.textContent = '下載 Tallomi ' + m.version;
+    a.href = m.download || m.zip; a.setAttribute('download', 'Tallomi-' + m.version + '.zip'); a.removeAttribute('aria-disabled'); a.textContent = '下載 Tallomi ' + m.version;
     document.getElementById('meta').textContent = '版本 ' + m.version + '　發布日期 ' + m.released + '　' + Math.round(m.size / 1024) + ' KB';
     var ul = document.getElementById('notes');
     (m.notes || []).forEach(function (n) { var li = document.createElement('li'); li.textContent = n; ul.appendChild(li); });

@@ -1425,6 +1425,29 @@ tr.vs td { display: block; width: 100%; }
   .ql-qr .qr { width: 128px; height: 128px; }
 }
 
+/* 分享給其他人 (1.69.0) */
+.share-box { display: grid; gap: 12px; }
+.share-qr { display: flex; flex-wrap: wrap; align-items: center; gap: 12px 18px; }
+.share-qr .qr { width: 176px; height: 176px; flex: none; }
+.share-side { flex: 1 1 220px; display: grid; gap: 10px; min-width: 0; }
+@media (max-width: 720px), (max-height: 500px) and (orientation: landscape) and (pointer: coarse) {
+  .share-qr { justify-content: center; }
+  .share-qr .qr { width: 200px; height: 200px; }
+  .share-side { flex-basis: 100%; }
+}
+
+/* 待確認 (1.70.0) */
+.banner.inbox-banner { margin-top: 10px; }
+.inbox-list { display: grid; gap: 8px; }
+.inbox-row { display: grid; grid-template-columns: minmax(0, 1fr) auto auto; align-items: center; gap: 6px 12px; padding: 10px 2px; border-bottom: 1px solid var(--line-2); }
+.inbox-main { display: grid; gap: 2px; min-width: 0; }
+.inbox-main b { overflow-wrap: anywhere; }
+.inbox-amt { font-weight: 600; text-align: right; }
+@media (max-width: 720px), (max-height: 500px) and (orientation: landscape) and (pointer: coarse) {
+  .inbox-row { grid-template-columns: minmax(0, 1fr) auto; }
+  .inbox-row .row-inline { grid-column: 1 / -1; justify-content: flex-end; }
+}
+
 /* category rules editor (1.62.0) */
 .rule-list { display: flex; flex-direction: column; gap: 10px; }
 .rule-row { border: 1px solid var(--line-2); border-radius: 10px; padding: 10px 12px; }
@@ -1546,3 +1569,5 @@ html.stale::after { content: ''; position: fixed; left: 0; top: 0; width: 100%; 
   .goals-manage, .rv-wrap { min-width: 0; }
 }
 @media (prefers-reduced-motion: reduce) { .alloc-arc { transition: none; } }
+.failbar { background: var(--neg-wash, #fbeaea); border-bottom-color: var(--neg, #b3261e); }
+.upd-log { margin: 6px 0 4px; font-size: 13px; }

@@ -434,6 +434,14 @@ window.addEventListener('resize', navEdges);
 }
 const ROUTES = { overview: viewOverview, calendar: viewCalendar, advances: viewAdvances, transactions: viewTransactions, exchange: viewExchange, invest: viewInvest, accounts: viewAccounts, reports: viewReports, categories: viewCategories, tags: viewTags, settings: viewSettings };
 function currentRoute() { const r = (location.hash || '').replace('#/', ''); return ROUTES[r] ? r : 'overview'; }
+// 1.71.0: opening the program with no page named in the address returns to the page that was open last time (this device only; Settings → 外觀 can switch it off).
+const LAST_ROUTE = 'pw_last_route', RESTORE_LAST = 'pw_restore_last';
+const restoreLastOn = () => lsGet(RESTORE_LAST) !== '0';
+(function restoreLastPage() {
+  if (!restoreLastOn() || (location.hash && location.hash !== '#' && location.hash !== '#/')) return;      // a link or the tray's 記一筆 already says where to go
+  const last = lsGet(LAST_ROUTE);
+  if (last && last !== 'overview' && last !== 'settings' && ROUTES[last]) history.replaceState(null, '', location.pathname + location.search + '#/' + last);
+})();
 // Leaving a page keeps its finished picture for a few minutes; coming back shows it at once while the fresh data loads behind it
 // (the same swap used for a live change), so switching pages never starts from a blank screen.
 const routeSnaps = {};
@@ -569,6 +577,7 @@ async function renderRoute() {
   const prev = S.route;
   let same = S.route === route && view.childNodes.length > 0;
   S.route = route; markHidden();
+  if (location.hash === '#/' + route && route !== 'settings') lsSet(LAST_ROUTE, route);          // only real pages count as "last page"
   document.querySelectorAll('.nav a').forEach((a) => {
     if (a.dataset.route === route) a.setAttribute('aria-current', 'page'); else a.removeAttribute('aria-current');
   });
@@ -920,7 +929,7 @@ async function viewOverview(view) {
     review: () => (typeof reviewBlock === 'function' ? reviewBlock() : null),
     goals: () => (typeof goalsBlock === 'function' ? goalsBlock() : null),
     networth: () => (typeof netWorthTrend === 'function' ? netWorthTrend({ compact: true }) : null),
-    reminders: () => [recurringBanner(), owedBanner()],
+    reminders: () => [recurringBanner(), owedBanner(), inboxBanner()],
     tiles: () => overviewTiles(),
     budget: () => budgetCard(),
     accounts: () => homeAccounts(ov, base),
@@ -1610,12 +1619,12 @@ function importReportDialog(rep, title = '匯入完成') {
 // Settings are six folders that open and close, with a search box on top. The sections themselves are built exactly as before (settingsBody);
 // they are only sorted into groups here, by their heading, so a new section just lands in 「關於」 until it is listed.
 const SETTINGS_GROUPS = [
-  ['外觀', ['外觀'], '主題 顏色 配色 隱藏 金額 眼睛'],
+  ['外觀', ['外觀'], '主題 顏色 配色 隱藏 金額 眼睛 上次 記住 頁面 開啟 啟動'],
   ['帳務', ['類別', '分類規則', '幣別與匯率', '定期交易'], '類別 分類規則 自動 規則 匯率 幣別 主要幣別 固定 訂閱 房租'],
   ['同步', ['手機連線', '這支手機', 'Google 試算表', '離線模式'], 'sheets google 同步 金鑰 試算表 手機 tailscale 離線'],
-  ['快速記帳', ['快速記帳'], '快速記帳 網址 連結 捷徑 shortcut 主畫面 iphone android qr code 書籤'],
+  ['快速記帳', ['快速記帳', '自動記帳（待確認）'], '快速記帳 網址 連結 捷徑 shortcut 主畫面 iphone android qr code 書籤 待確認 自動記帳 背面輕點 apple pay 交易 自動化 收件匣'],
   ['資料', ['匯入資料', '匯出與備份', '備份與匯出', 'PIN 鎖', '危險區'], '匯入 匯出 csv 備份 還原 pin 密碼 鎖 清除 刪除'],
-  ['關於', ['軟體更新', '意見回饋', '診斷紀錄', '關於這個版本', '切換版本'], '版本 更新 回饋 意見 診斷 紀錄 錯誤 閃退 當機 卡頓 記憶體 開機 自動啟動 結束 關閉'],
+  ['關於', ['分享給其他人', '軟體更新', '意見回饋', '診斷紀錄', '關於這個版本', '切換版本'], '分享 朋友 其他人 下載 用戶版 qr code 網址 版本 更新 回饋 意見 診斷 紀錄 錯誤 閃退 當機 卡頓 記憶體 開機 自動啟動 結束 關閉'],
 ];
 function groupSettings(nodes) {
   const titleOf = (n) => { const h2 = n.querySelector && n.querySelector('.section-head h2'); return h2 ? h2.textContent.trim() : ''; };
@@ -1732,6 +1741,7 @@ async function settingsBody(view) {
   picker.addEventListener('change', () => choose(picker.value));
   paintSwatches();
   const hideAllCb = h('input', { type: 'checkbox', checked: S.hideAll, onchange: (e) => setHideAll(e.target.checked) });
+  const restoreCb = h('input', { type: 'checkbox', checked: restoreLastOn(), onchange: (e) => { lsSet(RESTORE_LAST, e.target.checked ? '1' : '0'); toast(e.target.checked ? '下次開啟會回到你最後看的頁面' : '下次開啟會從總覽開始'); } });
   const pageChecks = Object.entries(PAGE_NAMES).map(([k, name]) => h('label', { class: 'row-inline' },
     h('input', { type: 'checkbox', checked: !!S.hidePages[k], disabled: S.hideAll, onchange: (e) => setHidePage(k, e.target.checked) }), h('span', null, name)));
   view.append(h('section', { class: 'section' },
@@ -1742,6 +1752,7 @@ async function settingsBody(view) {
         hexHint),
       h('p', { class: 'hint', style: 'margin:0' }, '淺色（例如薰衣草紫）會直接當作背景；較深或較飽和的顏色會當作重點色；很深的顏色會自動切成深色版面。文字對比會自動調整，換成什麼顏色都看得清楚。'),
       h('label', { class: 'row-inline' }, hideAllCb, h('span', null, h('b', null, '隱藏所有金額'), '（所有頁面都顯示成 ***）')),
+      h('label', { class: 'row-inline' }, restoreCb, h('span', null, h('b', null, '開啟時回到上次的頁面'), '（只影響這台裝置；關掉就一律從總覽開始）')),
       h('div', { class: 'field' }, h('span', { style: 'font-weight:500' }, '各頁個別隱藏'),
         h('div', { class: 'row-inline', style: 'gap:18px' }, pageChecks),
         h('span', { class: 'hint' }, '每一頁標題旁的眼睛圖示可以單獨隱藏那一頁，彼此獨立，這裡也能設定。打開「隱藏所有金額」時，所有頁面都會隱藏，各頁的個別設定先保留；關閉後就恢復。')))));
@@ -1780,15 +1791,17 @@ async function settingsBody(view) {
     view.append(h('section', { class: 'section' }, h('div', { class: 'section-head' }, h('h2', null, '這支手機')),
       h('div', { class: 'rows' }, h('p', { class: 'hint', style: 'margin:0' }, '你正在用手機連到家裡電腦上的 Tallomi。Google 試算表、匯入匯出、備份與手機管理只能在電腦上操作。'),
         h('p', { class: 'hint', style: 'margin:0' }, '鍵盤打不出來？', h('a', { href: 'static/kb-a.html' }, '測試頁 A（完全沒有樣式）'), '　', h('a', { href: 'static/kb-b.html' }, '測試頁 B（套用 Tallomi 樣式）'), '　', h('a', { href: 'static/kb-c.html' }, '測試頁 C（對話框）'))))); 
-    view.append(quickLinkSection());
+    view.append(quickLinkSection(), inboxSection());
+    { const sh = shareSection(); if (sh) view.append(sh); }
     view.append(locSection());
     if (LOC.mode === 'pc') view.append(offlineSection());
     view.append(diagSection());
     return;
   }
-  if (st.phone) { await phoneSettings(view); view.append(quickLinkSection()); view.append(diagSection()); return; }       // the phone version: no folders, Google connection, tray or shutdown
+  if (st.phone) { await phoneSettings(view); view.append(quickLinkSection(), inboxSection()); { const sh = shareSection(); if (sh) view.append(sh); } view.append(diagSection()); return; }       // the phone version: no folders, Google connection, tray or shutdown
   await settingsPhone(view);
-  view.append(quickLinkSection());
+  view.append(quickLinkSection(), inboxSection());
+  { const sh = shareSection(); if (sh) view.append(sh); }
 
   // --- google sheets
   const keyIn = h('input', { value: sh.key, placeholder: '貼上試算表網址或 ID', style: 'min-width:min(340px,100%)', 'aria-label': '試算表網址或 ID' });
