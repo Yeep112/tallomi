@@ -5,6 +5,10 @@
 
 // ---- add an entry in a dialog (type / category / day already chosen)
 function openQuickAdd({ type = 'expense', category = '', date = '', seed = null, title: given = '', onSaved = null } = {}) {
+  if (!S.st) {                                                       // 1.72.1: tapped while the book is still loading: open once it is there (several taps open one form)
+    if (!S.qaWaiting) { S.qaWaiting = true; toast('帳本還在載入，好了就會打開'); whenState().then(() => { S.qaWaiting = false; openQuickAdd({ type, category, date, seed, title: given, onSaved }); }); }
+    return;
+  }
   const first = activeAccounts()[0];
   const m = { type, account_id: S.entry.account_id || (first ? first.id : null), to_account_id: null, amount: '', to_amount: '', category, note: '', tags: pinnedTags(), time: '',
     advance: '', counterparty: '', due: '', no_budget: false, no_stats: false };

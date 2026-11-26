@@ -299,8 +299,11 @@ if (new URLSearchParams(location.search).get('add')) { S.focusAdd = true; histor
 const PAGE_NAMES = { overview: '總覽', transactions: '交易', exchange: '換匯', invest: '投資', accounts: '帳戶', reports: '報表' };
 const isHidden = () => !!(S.hideAll || S.hidePages[S.route]);
 document.documentElement.classList.toggle('amounts-hidden', isHidden());
-const acct = (id) => S.st.accounts.find((a) => a.id == id);
-const activeAccounts = () => S.st.accounts.filter((a) => !a.archived);
+// 1.72.1: safe before the book has loaded (a tap during a slow start, a Shortcut link while the computer is off): no accounts yet, never a script error
+const acct = (id) => ((S.st && S.st.accounts) || []).find((a) => a.id == id);
+const activeAccounts = () => ((S.st && S.st.accounts) || []).filter((a) => !a.archived);
+const stWaiters = [];
+const whenState = () => (S.st ? Promise.resolve(S.st) : new Promise((res) => stWaiters.push(res)));   // something that needs the book waits for it instead of failing
 
 // Look-and-feel choices live in the book (so they survive a changed port or a restored backup);
 // localStorage is only a cache so the right colour is on screen before the first request returns.
@@ -349,6 +352,7 @@ async function refresh() {
   pfRoute(currentRoute());                             // the page's own questions leave now, together with the one for the state (not one after the other)
   S.st = (await pfState()) || await api('GET', '/api/state');
   S.lastRefresh = Date.now(); S.day = nowLocal().slice(0, 10);
+  if (S.st) while (stWaiters.length) stWaiters.shift()(S.st);
   if (typeof offlineSync === 'function') await offlineSync();
   if (typeof locAfterRefresh === 'function') locAfterRefresh().catch(() => {});
   if (!S.prefsApplied && S.st.prefs) { S.prefsApplied = true; applyPrefs(S.st.prefs); }
@@ -2084,19 +2088,31 @@ async function revWatch() {
 
 // --------------------------------------------------------------------- boot
 (async function boot() {
+  const tRefresh0 = performance.now();
+  let tEngine = 0;
+  if (window.__phoneReady) window.__phoneReady.then(() => { tEngine = performance.now(); }).catch(() => {});
   try { await refresh(); } catch (e) {
     $('#view').replaceChildren(h('div', { class: 'empty' }, h('b', null, e.network ? '暫時連不上電腦' : '無法啟動'), h('p', null, e.message),
       e.network ? h('p', { class: 'hint' }, '電腦開機並執行 Tallomi 後就能連上。想在電腦沒開時也能用，請在連得上電腦時到「設定 → 電腦沒開也能用」開啟，手機就會存一份帳本。') : null,
       h('button', { class: 'btn primary', type: 'button', onclick: () => location.reload() }, '重試')));
   }
-  if (window.pwDiag) pwDiag.start(Math.round(performance.now()));            // the first page is drawn: a slow start is noted (設定 → 診斷紀錄)
+  if (window.pwDiag) {                                                       // the first page is drawn: a slow start is noted (設定 → 診斷紀錄)
+    const now = performance.now(), sec = (ms) => `${(Math.max(0, ms) / 1000).toFixed(1)} 秒`;
+    const parts = [S.st ? (S.st.phone ? '手機本機' : S.st.remote ? '連到電腦' : '電腦') : '沒有啟動成功'];        // 1.72.1: where the time went, so a slow start can be fixed
+    parts.push(`載入網頁 ${sec(tRefresh0)}`);
+    if (window.__phoneStale) parts.push('先用上次的畫面');
+    else if (tEngine) parts.push(`等程式啟動 ${sec(tEngine - tRefresh0)}`, `讀帳本 ${sec(now - tEngine)}`);
+    else parts.push(`讀帳本 ${sec(now - tRefresh0)}`);
+    if (S.st && S.st.phone && !window.__phoneStale && S.st.lock && S.st.lock.enabled) parts.push('PIN 鎖開著，不先顯示上次的畫面');
+    pwDiag.start(Math.round(now), parts.join('・'));
+  }
   const remote = !!(S.st && S.st.remote);
   const phone = !!(S.st && S.st.phone);
   if (typeof outboxFlush === 'function') outboxFlush().catch(() => {});       // an entry that was tapped but never answered last time is sent now
   if (phone) phoneStartup();
   if (window.__phoneStale && typeof freshenAfterStale === 'function') freshenAfterStale();        // drawn from last time's answers: refresh as soon as the program is up
   if (S.st && S.st.onboarding && typeof onboardingWizard === 'function') onboardingWizard();
-  if (typeof quickLinkStart === 'function') quickLinkStart();            // opened from a quick-entry link: show the filled-in form (never saves by itself)
+  if (typeof quickLinkStart === 'function') quickLinkStart();            // opened from a quick-entry link: show the filled-in form (never saves by itself); without a book it is kept for 重試
   const ping = () => { if (!remote && !phone) fetch('/api/ping').catch(() => {}); };
   setInterval(ping, 5000);
   if ((remote || offlineOn() || locOn()) && 'serviceWorker' in navigator && (location.protocol === 'https:' || ['localhost', '127.0.0.1'].includes(location.hostname))) navigator.serviceWorker.register('/sw.js').catch(() => {});

@@ -85,8 +85,12 @@ window.addEventListener('hashchange', (e) => {
 });
 function quickLinkStart() {
   const link = quickPending || (isQuickHash(location.hash) ? location.hash : null);
-  quickPending = null;
   if (!link) return;
+  if (!S.st) {                                                       // 1.72.1: the book could not be read (computer off, start failed): keep the link in the address so 重試 still has it
+    if (!isQuickHash(location.hash)) history.replaceState(null, '', location.pathname + location.search + link);
+    quickPending = link; whenState().then(() => quickLinkStart()); return;
+  }
+  quickPending = null;
   if (isQuickHash(location.hash)) quickHome('#/overview');
   quickLast = location.hash || '#/overview';
   quickLinkOpen(link);

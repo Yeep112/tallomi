@@ -48,7 +48,7 @@
   window.pwDiag = {
     read, note,
     clear() { try { localStorage.removeItem(KEY); } catch { /* ignore */ } },
-    start(ms) { if (ms > 3500) note('slow-start', `開啟到看見畫面用了 ${(ms / 1000).toFixed(1)} 秒`); },       // called by app.js once the first page is drawn
+    start(ms, why) { if (ms > 3500) note('slow-start', `開啟到看見畫面用了 ${(ms / 1000).toFixed(1)} 秒${why ? `（${why}）` : ''}`); },       // called by app.js once the first page is drawn; 1.72.1: with where the time went
     text() {
       const v = read(), ua = navigator.userAgent.replace(/\s+/g, ' ').slice(0, 160);
       return [`Tallomi ${build()}　${new Date().toLocaleString('zh-TW', { hour12: false })}`, ua, ...v.map((e) => `${new Date(e.at).toLocaleString('zh-TW', { hour12: false })}　${e.k}${e.p ? '@' + e.p : ''}${e.n > 1 ? ' ×' + e.n : ''}　${e.t}`)].join('\n');
