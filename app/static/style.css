@@ -1571,3 +1571,8 @@ html.stale::after { content: ''; position: fixed; left: 0; top: 0; width: 100%; 
 @media (prefers-reduced-motion: reduce) { .alloc-arc { transition: none; } }
 .failbar { background: var(--neg-wash, #fbeaea); border-bottom-color: var(--neg, #b3261e); }
 .upd-log { margin: 6px 0 4px; font-size: 13px; }
+/* 1.72.2 — the owner's "publish Claude's update" dialog */
+.pend-list { margin: 4px 0 10px; padding-left: 20px; }
+.pend-list li { margin: 2px 0; overflow-wrap: anywhere; }
+.updatebar.pend-ok { border-bottom-color: var(--pos, #2e7d32); }
+.updatebar.pend-bad { background: var(--neg-wash, #fbeaea); border-bottom-color: var(--neg, #b3261e); }

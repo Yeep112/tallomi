@@ -1628,7 +1628,7 @@ const SETTINGS_GROUPS = [
   ['同步', ['手機連線', '這支手機', 'Google 試算表', '離線模式'], 'sheets google 同步 金鑰 試算表 手機 tailscale 離線'],
   ['快速記帳', ['快速記帳', '自動記帳（待確認）'], '快速記帳 網址 連結 捷徑 shortcut 主畫面 iphone android qr code 書籤 待確認 自動記帳 背面輕點 apple pay 交易 自動化 收件匣'],
   ['資料', ['匯入資料', '匯出與備份', '備份與匯出', 'PIN 鎖', '危險區'], '匯入 匯出 csv 備份 還原 pin 密碼 鎖 清除 刪除'],
-  ['關於', ['分享給其他人', '軟體更新', '意見回饋', '診斷紀錄', '關於這個版本', '切換版本'], '分享 朋友 其他人 下載 用戶版 qr code 網址 版本 更新 回饋 意見 診斷 紀錄 錯誤 閃退 當機 卡頓 記憶體 開機 自動啟動 結束 關閉'],
+  ['關於', ['分享給其他人', '軟體更新', '發佈新版本', '意見回饋', '診斷紀錄', '關於這個版本', '切換版本'], '分享 朋友 其他人 下載 用戶版 qr code 網址 版本 更新 回饋 意見 診斷 紀錄 錯誤 閃退 當機 卡頓 記憶體 開機 自動啟動 結束 關閉'],
 ];
 function groupSettings(nodes) {
   const titleOf = (n) => { const h2 = n.querySelector && n.querySelector('.section-head h2'); return h2 ? h2.textContent.trim() : ''; };
@@ -1967,6 +1967,7 @@ async function settingsBody(view) {
 
   view.append(lockSection());
   { const us = updateSection(); if (us) view.append(us); }
+  { const op = typeof ownerPublishSection === 'function' ? ownerPublishSection() : null; if (op) view.append(op); }      // 1.72.2: owner's copy
   { const ms = modeSection(); if (ms) view.append(ms); }
   { const fs = feedbackSection(); if (fs) view.append(fs); }
 
@@ -2110,6 +2111,7 @@ async function revWatch() {
   const phone = !!(S.st && S.st.phone);
   if (typeof outboxFlush === 'function') outboxFlush().catch(() => {});       // an entry that was tapped but never answered last time is sent now
   if (phone) phoneStartup();
+  if (typeof ownerPendingCheck === 'function') { ownerPendingCheck(); setInterval(() => ownerPendingCheck(), 30 * 60 * 1000); }      // 1.72.2: Claude's update waiting (owner's copy)
   if (window.__phoneStale && typeof freshenAfterStale === 'function') freshenAfterStale();        // drawn from last time's answers: refresh as soon as the program is up
   if (S.st && S.st.onboarding && typeof onboardingWizard === 'function') onboardingWizard();
   if (typeof quickLinkStart === 'function') quickLinkStart();            // opened from a quick-entry link: show the filled-in form (never saves by itself); without a book it is kept for 重試
