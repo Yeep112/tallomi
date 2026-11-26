@@ -1,15 +1,15 @@
 {
  "app": "pennyworth",
- "version": "1.71.0",
+ "version": "1.72.0",
  "released": "2026-11-26",
- "zip": "Pennyworth-1.71.0.zip",
- "download": "Pennyworth-1.71.0.zip",
- "sha256": "3d12c5e91a54b4e0b8b7f0c2eab2b70224876431d846fb55cfc4fb2e10f1a130",
- "size": 1095706,
+ "zip": "Pennyworth-1.72.0.zip",
+ "download": "Pennyworth-1.72.0.zip",
+ "sha256": "163bed23be06c50dfe94047ed424c0b9ee5542ddc55c724d6a386dd064ac8435",
+ "size": 1100969,
  "notes": [
-  "一鍵發佈：publish.bat 自動建置、檢查、推送到 GitHub，舊檔案自動清掉；倉庫只留一份 zip",
-  "開啟時回到上次看的頁面，記住視窗大小與位置；捷徑改成直接啟動，不再閃黑視窗",
-  "設定頁新增「檢查更新」紀錄；更新失敗被還原時，首頁會顯示一次原因"
+  "工作列：Tallomi 變成自己的軟體，視窗不再被歸在 Edge 底下；工作列上的圖示就是 Tallomi 的蜂巢 T，「釘選到工作列」釘的是 Tallomi 本身",
+  "現有的桌面／開始功能表／工作列 Tallomi 捷徑會在開啟時自動補上識別，不用重建捷徑",
+  "重新建立虛擬環境時優先使用 Python 3.13／3.12，視窗元件（pywebview）才裝得起來"
  ],
  "min_version": "0",
  "manual": false,

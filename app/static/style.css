@@ -1569,3 +1569,5 @@ html.stale::after { content: ''; position: fixed; left: 0; top: 0; width: 100%; 
   .goals-manage, .rv-wrap { min-width: 0; }
 }
 @media (prefers-reduced-motion: reduce) { .alloc-arc { transition: none; } }
+.failbar { background: var(--neg-wash, #fbeaea); border-bottom-color: var(--neg, #b3261e); }
+.upd-log { margin: 6px 0 4px; font-size: 13px; }

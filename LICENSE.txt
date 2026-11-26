@@ -1,7 +1,0 @@
-The emoji pictures in this folder are Twemoji graphics.
-
-Copyright 2019 Twitter, Inc and other contributors (maintained by the jdecked/twemoji project).
-Graphics are licensed under CC-BY 4.0: https://creativecommons.org/licenses/by/4.0/
-Source: https://github.com/jdecked/twemoji  (files taken from the npm package @twemoji/svg 15.0.0)
-
-Only a selection is included; the files are unmodified copies.
