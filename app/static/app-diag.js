@@ -59,7 +59,7 @@
 
 // The settings section. (Only functions here: the page builders live in app.js, which loads after this file.)
 function diagSection() {
-  const KIND = { error: '錯誤', 'cut-off': '被中斷', freeze: '停住', 'slow-start': '慢啟動' };
+  const KIND = { error: '錯誤', 'cut-off': '被中斷', freeze: '停住', 'slow-start': '慢啟動', 'remote-late': '更新慢' };
   const list = h('div', { class: 'rows' });
   const paint = () => {
     const v = window.pwDiag.read().slice().reverse();

@@ -98,6 +98,7 @@ async function api(method, path, body, isForm) {
   return apiRoute(method, path, body, isForm);
 }
 async function apiRoute(method, path, body, isForm) {
+  if (method === 'GET' && S.lsStale) { const kept = lsHit(path); if (kept != null) return kept; }      // 1.72.6: the page is being drawn from last time (app-prefetch.js)
   if (typeof offlineOn === 'function' && offlineOn()) return offlineApi(method, path, body, isForm);
   return typeof locGuard === 'function' ? locGuard(method, path, body, isForm) : apiNet(method, path, body, isForm);     // 1.63.0: with 電腦沒開也能用 on, a computer that does not answer is replaced by the phone's own copy (app-local.js)
 }
@@ -117,7 +118,7 @@ async function apiNetGo(method, path, body, isForm) {
   if (method === 'GET') {                              // an answer asked ahead (app-prefetch.js) is used if it is still good; the question is also noted so the page's next visit can ask ahead
     pfNote(path);
     const ahead = await pfTake(path);
-    if (ahead) return ahead.data;
+    if (ahead) { lsKeep(path, ahead.data); return ahead.data; }
   } else if (pfAsked.size) pfAsked.clear();            // a change is on its way: nothing asked before it may be used
   const opt = { method, headers: { 'X-Pennyworth': '1' } };
   if (body !== undefined && !isForm) { opt.headers['Content-Type'] = 'application/json'; opt.body = JSON.stringify(body); }
@@ -139,11 +140,16 @@ async function apiNetGo(method, path, body, isForm) {
   if (away && (r.status === 502 || r.status === 503 || r.status === 504) && !(data && data.error)) { remote || (S.awayHost = true); throw gone(); }
   const rev = Number(r.headers.get('X-Rev'));
   if (rev > (S.rev || 0)) S.rev = rev;                 // our own change: do not treat it as news from another window
-  if (r.status === 401 && data && data.locked) { await showLock(); return apiNetGo(method, path, body, isForm); }      // PIN lock: ask, then try again
+  if (r.status === 401 && data && data.locked) {                                  // PIN lock: ask, then try again
+    lsDrop();                                                                    // 1.72.6: a book that is locked now keeps nothing on the phone, and a page drawn from last time is taken off first
+    if (document.documentElement.classList.contains('stale') && !S.lsStale) $('#view').replaceChildren();
+    await showLock(); return apiNetGo(method, path, body, isForm);
+  }
   if (r.status === 401 && data && data.pair) { location.replace('/pair' + (typeof isQuickHash === 'function' && isQuickHash(location.hash) ? location.hash : '')); throw new Error('這支手機需要重新配對'); }      // a quick-entry link survives the pairing page
   if ((r.status === 404 || r.status === 405) && path.startsWith('/api/') && (!data || data.error === '找不到' || !data.error))
     { const err = new Error('目前執行的 Tallomi 程式是舊版，缺少這個功能。請把 Tallomi 完全結束（設定 → 結束 Tallomi），再重新開啟。'); err.status = r.status; throw err; }
   if (!r.ok) { const err = new Error((data && data.error) || `請求失敗（${r.status}）`); err.status = r.status; throw err; }
+  if (method === 'GET') lsKeep(path, data);              // 1.72.6: kept for the next opening (only on a phone connected to the computer, with no PIN lock)
   return data;
 }
 
@@ -349,12 +355,14 @@ function pageIntro(text) {
 }
 
 async function refresh() {
-  pfRoute(currentRoute());                             // the page's own questions leave now, together with the one for the state (not one after the other)
-  S.st = (await pfState()) || await api('GET', '/api/state');
+  const kept = S.lsStale ? lsHit('/api/state') : null;  // 1.72.6: drawn from last time first (boot); the real answers follow at once
+  if (!kept) pfRoute(currentRoute());                  // the page's own questions leave now, together with the one for the state (not one after the other)
+  S.st = kept || (await pfState()) || await api('GET', '/api/state');
+  if (!kept) lsKeep('/api/state', S.st);
   S.lastRefresh = Date.now(); S.day = nowLocal().slice(0, 10);
   if (S.st) while (stWaiters.length) stWaiters.shift()(S.st);
-  if (typeof offlineSync === 'function') await offlineSync();
-  if (typeof locAfterRefresh === 'function') locAfterRefresh().catch(() => {});
+  if (!kept && typeof offlineSync === 'function') await offlineSync();
+  if (!kept && typeof locAfterRefresh === 'function') locAfterRefresh().catch(() => {});
   if (!S.prefsApplied && S.st.prefs) { S.prefsApplied = true; applyPrefs(S.st.prefs); }
   $('#ver').textContent = `版本 ${S.st.version}`;
   updateAdvBadge();
@@ -2110,12 +2118,63 @@ async function revWatch() {
   }
 }
 
+// 1.72.6 — the small label in the top corner while a page drawn from last time is being refreshed. `retry` turns it into a button (the computer did not answer).
+function staleNote(text, retry) {
+  let el = document.getElementById('stale-note');
+  if (!text) { if (el) el.remove(); return; }
+  if (!el) { el = h('button', { id: 'stale-note', type: 'button', role: 'status', 'aria-live': 'polite' }); document.body.appendChild(el); }
+  el.textContent = text; el.disabled = !retry; el.classList.toggle('warn', !!retry);
+  el.onclick = retry || null;
+  el.title = retry ? '再試一次連到電腦' : '正在跟電腦拿最新資料';
+}
+// After the page was drawn from last time: ask the computer now and redraw with what it says. A box with something typed in it gets a few seconds to be
+// finished first. If the computer does not answer, the kept page stays (labelled with its time) and the question is asked again a little later, at once when tapped.
+async function freshenRemote(at) {
+  const root = document.documentElement;
+  const hhmm = (t) => { const d = new Date(t); const p2 = (n) => String(n).padStart(2, '0'); return (d.toDateString() === new Date().toDateString() ? '' : `${d.getMonth() + 1}/${d.getDate()} `) + `${p2(d.getHours())}:${p2(d.getMinutes())}`; };
+  const t0 = performance.now();
+  for (let tries = 0; ; tries++) {
+    for (let i = 0; i < 16; i++) {
+      const a = document.activeElement;
+      if (!(a && /^(INPUT|TEXTAREA)$/.test(a.tagName) && a.value)) break;
+      await sleep(500);
+    }
+    try {
+      await refresh();
+      root.classList.remove('stale'); staleNote(null);
+      if (tries && window.pwDiag) pwDiag.note('remote-late', `電腦之前沒回應，第 ${tries + 1} 次才拿到最新資料`);
+      else if (window.pwDiag && performance.now() - t0 > 3500) pwDiag.note('remote-late', `先用上次的畫面，最新資料 ${((performance.now() - t0) / 1000).toFixed(1)} 秒後才到`);
+      return;
+    } catch (e) {
+      root.classList.remove('stale');
+      if (!e || !e.network) { staleNote(null); fail(e); return; }
+      let go;
+      const wake = new Promise((r) => { go = r; });
+      staleNote(`連不上電腦・顯示 ${hhmm(at)} 的資料`, () => { staleNote('更新中…'); root.classList.add('stale'); go(); });
+      const timer = setTimeout(go, Math.min(30000, 3000 * (tries + 1)));
+      const back = () => { if (document.visibilityState === 'visible') go(); };
+      window.addEventListener('online', go, { once: true }); document.addEventListener('visibilitychange', back);
+      await wake;
+      clearTimeout(timer); window.removeEventListener('online', go); document.removeEventListener('visibilitychange', back);
+      while (document.visibilityState !== 'visible') await sleep(1000);
+    }
+  }
+}
+
 // --------------------------------------------------------------------- boot
 (async function boot() {
   const tRefresh0 = performance.now();
   let tEngine = 0;
   if (window.__phoneReady) window.__phoneReady.then(() => { tEngine = performance.now(); }).catch(() => {});
-  try { await refresh(); } catch (e) {
+  const last = (typeof offlineOn === 'function' && offlineOn()) ? null : await lsLoaded;      // 1.72.6: a phone on the computer draws last time's page first
+  if (last) {
+    S.lsStale = lsMap; document.documentElement.classList.add('stale'); staleNote('更新中…');
+    try { await refresh(); S.lsShown = last.at; } catch { S.lsShown = 0; }
+    S.lsStale = null;
+    if (!S.lsShown) { document.documentElement.classList.remove('stale'); staleNote(null); S.st = null; }
+  }
+  if (S.lsShown) freshenRemote(S.lsShown);
+  else try { await refresh(); } catch (e) {
     $('#view').replaceChildren(h('div', { class: 'empty' }, h('b', null, e.network ? '暫時連不上電腦' : '無法啟動'), h('p', null, e.message),
       e.network ? h('p', { class: 'hint' }, '電腦開機並執行 Tallomi 後就能連上。想在電腦沒開時也能用，請在連得上電腦時到「設定 → 電腦沒開也能用」開啟，手機就會存一份帳本。') : null,
       h('button', { class: 'btn primary', type: 'button', onclick: () => location.reload() }, '重試')));
@@ -2124,7 +2183,7 @@ async function revWatch() {
     const now = performance.now(), sec = (ms) => `${(Math.max(0, ms) / 1000).toFixed(1)} 秒`;
     const parts = [S.st ? (S.st.phone ? '手機本機' : S.st.remote ? '連到電腦' : '電腦') : '沒有啟動成功'];        // 1.72.1: where the time went, so a slow start can be fixed
     parts.push(`載入網頁 ${sec(tRefresh0)}`);
-    if (window.__phoneStale) parts.push('先用上次的畫面');
+    if (window.__phoneStale || S.lsShown) parts.push('先用上次的畫面');
     else if (tEngine) parts.push(`等程式啟動 ${sec(tEngine - tRefresh0)}`, `讀帳本 ${sec(now - tEngine)}`);
     else parts.push(`讀帳本 ${sec(now - tRefresh0)}`);
     if (S.st && S.st.phone && !window.__phoneStale && S.st.lock && S.st.lock.enabled) parts.push('PIN 鎖開著，不先顯示上次的畫面');

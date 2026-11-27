@@ -116,3 +116,70 @@ if (pfOn()) {
   const first = (location.hash.match(/^#\/([a-z]+)/) || [])[1] || 'overview';
   pfRoute(first);
 }
+
+// 1.72.6 — 上次的畫面 (last screen first), for a phone connected to the computer (Tailscale).
+// Opening the app used to wait for the computer before anything was drawn (2–4 s over the phone link). Now the answers the page got the last time are kept
+// on the phone; the next opening draws the page from them at once, a small "更新中…" label shows while the computer is asked in the background, and the page is
+// redrawn with the fresh answers when they arrive. If the computer cannot be reached the kept page stays, labelled with the time it is from.
+// Safety: nothing is kept for a book with a PIN lock (a locked book must not show its numbers before the PIN), only reads are kept, a kept page is only ever drawn
+// by the same program build that made it, and every change (a tap that writes) still goes to the computer as before.
+const LS_DB = 'tallomi-last', LS_KEY = 'v1', LS_MAX = 80, LS_MAX_ONE = 400000, LS_DAYS = 14;
+const LS_SKIP = /^\/api\/(rev|ping|sheets|update|lock|invest\/fetch|market\/refresh|pair|remote|export|backup|owner-pending|phone|local)(\?|\/|$)|[?&]wait=/;
+const lsBuild = () => ((document.querySelector('meta[name="pw-build"]') || {}).content || '');
+const lsAway = () => !window.PW_PHONE && !/^(localhost|127\.0\.0\.1|\[::1\])$/.test(location.hostname);
+let lsMap = null, lsDirty = 0, lsDbP = null;
+function lsDb() {
+  if (!lsDbP) lsDbP = new Promise((res) => {
+    try { const q = indexedDB.open(LS_DB, 1); q.onupgradeneeded = () => q.result.createObjectStore('kv'); q.onsuccess = () => res(q.result); q.onerror = () => res(null); q.onblocked = () => res(null); }
+    catch { res(null); }
+  });
+  return lsDbP;
+}
+// The kept page of last time (or null). Started while the program files are still loading, so boot() finds it read.
+const lsLoaded = lsAway() ? (async () => {
+  const db = await lsDb(); if (!db) return null;
+  const rec = await new Promise((res) => { try { const r = db.transaction('kv').objectStore('kv').get(LS_KEY); r.onsuccess = () => res(r.result || null); r.onerror = () => res(null); } catch { res(null); } });
+  if (!rec || rec.build !== lsBuild() || rec.lockOff !== true || !rec.map || !rec.map['/api/state']) return null;
+  lsMap = rec.map;
+  return rec;
+})().catch(() => null) : Promise.resolve(null);
+function lsSave() {
+  if (lsDirty) return;
+  lsDirty = setTimeout(async () => {
+    lsDirty = 0;
+    const db = await lsDb(); if (!db) return;
+    const map = lsMap || {}, old = Date.now() - LS_DAYS * 864e5;
+    Object.keys(map).forEach((k) => { if (!(map[k].t > old)) delete map[k]; });
+    Object.keys(map).sort((a, b) => map[b].t - map[a].t).slice(LS_MAX).forEach((k) => delete map[k]);
+    const rec = map['/api/state'] ? { build: lsBuild(), lockOff: true, at: map['/api/state'].t, map } : null;
+    try { const os = db.transaction('kv', 'readwrite').objectStore('kv'); if (rec) os.put(rec, LS_KEY); else os.delete(LS_KEY); } catch { /* full or closed: nothing kept this time */ }
+  }, 700);
+}
+// Keep only what a phone on the computer read, with no PIN lock, outside offline mode (that keeps its own copy) and never the kept answers themselves.
+function lsKeepOn() {
+  const st = typeof S === 'object' && S ? S.st : null;
+  return lsAway() && !!st && !!st.remote && !st.phone && !S.lsStale && !!st.lock && st.lock.enabled === false
+    && !(typeof offlineOn === 'function' && offlineOn());
+}
+function lsKeep(path, data) {
+  try {
+    if (path === '/api/state') {
+      const st = data;
+      if (!st || !st.lock || st.lock.enabled !== false) { lsDrop(); return; }   // a PIN lock is on: nothing of this book stays on the phone
+    }
+    if (!lsKeepOn() || data == null || LS_SKIP.test(path) || path.length > 300) return;
+    const b = JSON.stringify(data);
+    if (b.length > LS_MAX_ONE) return;
+    if (!lsMap) lsMap = {};
+    lsMap[path] = { b, t: Date.now() };
+    lsSave();
+  } catch { /* not keepable: simply not kept */ }
+}
+function lsDrop() { lsMap = null; if (lsAway()) lsSave(); }
+// The kept answer for `path` while the page is being drawn from last time (a fresh copy each time, pages may change what they get).
+function lsHit(path) {
+  const map = typeof S === 'object' && S ? S.lsStale : null;
+  const e = map && map[path];
+  if (!e) return null;
+  try { return JSON.parse(e.b); } catch { return null; }
+}

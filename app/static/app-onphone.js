@@ -75,7 +75,8 @@ async function storageState() {
 async function freshenAfterStale() {
   const root = document.documentElement;
   root.classList.add('stale');
-  try { await window.__phoneReady; } catch { root.classList.remove('stale'); return; }
+  if (typeof staleNote === 'function') staleNote('更新中…');
+  try { await window.__phoneReady; } catch { root.classList.remove('stale'); if (typeof staleNote === 'function') staleNote(null); return; }
   for (let i = 0; i < 16; i++) {
     const a = document.activeElement;           // "typing" = a box with something already in it (an empty focused box is just where the cursor waits)
     if (!(a && /^(INPUT|TEXTAREA)$/.test(a.tagName) && a.value)) break;
@@ -83,6 +84,7 @@ async function freshenAfterStale() {
   }
   try { await refresh(); } catch { /* the next action says what is wrong */ }
   root.classList.remove('stale');
+  if (typeof staleNote === 'function') staleNote(null);
 }
 function phoneStartup() {
   try { if (navigator.storage && navigator.storage.persist) navigator.storage.persist().catch(() => {}); } catch { /* ignore */ }
