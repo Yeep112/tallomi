@@ -1,13 +1,13 @@
 {
  "app": "pennyworth",
- "version": "1.72.2",
+ "version": "1.72.3",
  "released": "2026-11-27",
- "zip": "Pennyworth-1.72.2.zip",
- "download": "Pennyworth-1.72.2.zip",
- "sha256": "92d674ebb0dfa638ab10bfe7d3e842039e833186426ab10f7ea34aea91a34435",
- "size": 1112049,
+ "zip": "Pennyworth-1.72.3.zip",
+ "download": "Pennyworth-1.72.3.zip",
+ "sha256": "2a5ff1d072346f80aca3a2d7445b2263cdf541fd6ae0dca295671829f4c6cf0e",
+ "size": 1113631,
  "notes": [
-  "發佈流程更穩定：每個新版本都會先在發佈者的電腦上跑完全部測試，全部通過才會上線"
+  "點一下右下角的 Tallomi 通知就會打開 Tallomi"
  ],
  "min_version": "0",
  "manual": false,
