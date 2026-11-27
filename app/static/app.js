@@ -2072,6 +2072,8 @@ async function reloadForUpdate() {
   try { sessionStorage.setItem('pw_reloaded', String(Date.now())); } catch { /* ignore */ }
   toast('Tallomi 有新版本，正在更新…');
   try { const reg = await navigator.serviceWorker.getRegistration(); if (reg) await reg.update(); } catch { /* no service worker */ }
+  try { const c = navigator.serviceWorker && navigator.serviceWorker.controller; if (c) c.postMessage({ type: 'forget-page' }); } catch { /* no service worker */ }   // 1.72.7: the phone's kept page is the old one:
+  try { for (const k of await caches.keys()) await (await caches.open(k)).delete('/__page'); } catch { /* no caches */ }                                     // open the computer's
   await sleep(600);
   location.reload();
 }
@@ -2178,11 +2180,14 @@ async function freshenRemote(at) {
     $('#view').replaceChildren(h('div', { class: 'empty' }, h('b', null, e.network ? '暫時連不上電腦' : '無法啟動'), h('p', null, e.message),
       e.network ? h('p', { class: 'hint' }, '電腦開機並執行 Tallomi 後就能連上。想在電腦沒開時也能用，請在連得上電腦時到「設定 → 電腦沒開也能用」開啟，手機就會存一份帳本。') : null,
       h('button', { class: 'btn primary', type: 'button', onclick: () => location.reload() }, '重試')));
+    if (e.network && !S.st) {                                  // 1.72.7: the page opened from the phone's copy but the computer is away: open it again by itself once the computer answers
+      const back = setInterval(() => { fetch('/api/ping', { cache: 'no-store' }).then((r) => { if (r.status < 500) { clearInterval(back); location.reload(); } }).catch(() => {}); }, 4000);
+    }
   }
   if (window.pwDiag) {                                                       // the first page is drawn: a slow start is noted (設定 → 診斷紀錄)
     const now = performance.now(), sec = (ms) => `${(Math.max(0, ms) / 1000).toFixed(1)} 秒`;
     const parts = [S.st ? (S.st.phone ? '手機本機' : S.st.remote ? '連到電腦' : '電腦') : '沒有啟動成功'];        // 1.72.1: where the time went, so a slow start can be fixed
-    parts.push(`載入網頁 ${sec(tRefresh0)}`);
+    parts.push(`載入網頁 ${sec(tRefresh0)}${document.querySelector('meta[name="pw-kept"]') ? '（用手機存的網頁）' : ''}`);
     if (window.__phoneStale || S.lsShown) parts.push('先用上次的畫面');
     else if (tEngine) parts.push(`等程式啟動 ${sec(tEngine - tRefresh0)}`, `讀帳本 ${sec(now - tEngine)}`);
     else parts.push(`讀帳本 ${sec(now - tRefresh0)}`);
@@ -2199,7 +2204,12 @@ async function freshenRemote(at) {
   if (typeof quickLinkStart === 'function') quickLinkStart();            // opened from a quick-entry link: show the filled-in form (never saves by itself); without a book it is kept for 重試
   const ping = () => { if (!remote && !phone) fetch('/api/ping').catch(() => {}); };
   setInterval(ping, 5000);
-  if ((remote || offlineOn() || locOn()) && 'serviceWorker' in navigator && (location.protocol === 'https:' || ['localhost', '127.0.0.1'].includes(location.hostname))) navigator.serviceWorker.register('/sw.js').catch(() => {});
+  if ((remote || offlineOn() || locOn()) && 'serviceWorker' in navigator && (location.protocol === 'https:' || ['localhost', '127.0.0.1'].includes(location.hostname))) {
+    navigator.serviceWorker.register('/sw.js')
+      .then(() => navigator.serviceWorker.ready)
+      .then((reg) => { if (reg.active) reg.active.postMessage({ type: 'remote-page', on: remote && !phone && !offlineOn() && !locOn() }); })      // 1.72.7: keep the page itself on a phone on the computer (sw.js)
+      .catch(() => {});
+  }
   watchTables();
   // Phone keyboard (iPhone): the page does not shrink when the keyboard slides up, only the visible part does. Measure the gap,
   // lift bottom sheets above the keyboard, hide the tab bar while typing, and put the page back where it was once the keyboard is gone.
