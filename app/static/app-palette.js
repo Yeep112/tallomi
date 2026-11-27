@@ -125,3 +125,5 @@ document.addEventListener('keydown', (e) => {
   else if (k === ']') stepMonth(1);
   else if (k === '?') { e.preventDefault(); openKeyHelp(); }
 });
+// 1.72.3: the sidebar button (it had an inline onclick, which the page's security policy blocks, so the button did nothing)
+{ const b = document.getElementById('cmd-open'); if (b) b.addEventListener('click', () => openPalette()); }

@@ -1,13 +1,13 @@
 {
  "app": "pennyworth",
- "version": "1.72.3",
+ "version": "1.72.4",
  "released": "2026-11-27",
- "zip": "Pennyworth-1.72.3.zip",
- "download": "Pennyworth-1.72.3.zip",
- "sha256": "2a5ff1d072346f80aca3a2d7445b2263cdf541fd6ae0dca295671829f4c6cf0e",
- "size": 1113631,
+ "zip": "Pennyworth-1.72.4.zip",
+ "download": "Pennyworth-1.72.4.zip",
+ "sha256": "079e5b39e2024ba9675cecbcba0eb8a069f466a5bbbbccafb11e107e1c208ed9",
+ "size": 1113967,
  "notes": [
-  "點一下右下角的 Tallomi 通知就會打開 Tallomi"
+  "側邊欄的「指令面板」按鈕按了沒反應的問題修好了（Ctrl + K 本來就可以用）"
  ],
  "min_version": "0",
  "manual": false,
