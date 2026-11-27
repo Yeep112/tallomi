@@ -45,7 +45,7 @@
   // ---- last-seen answers. The program takes a few seconds to wake up on a phone; meanwhile the page can already be drawn from the
   // answers it got last time (a thin bar says they are being refreshed). Only reads are ever answered this way, only while the
   // program is still starting, and never for a book with a PIN lock (a locked book must not show its numbers before the PIN).
-  const BUILD = '1.72.4';
+  const BUILD = '1.72.5';
   // SHAPE says which form the kept answers have. They survive an update (the first start after an update is drawn at once too) as long as the shape is the
   // same; it is raised by hand whenever an answer loses or renames a field (tests/test_phone_answers_170.py fails when that happens without it).
   const SHAPE = 1;

@@ -159,9 +159,42 @@ const PEND_TEXT = {
 function ownerResultMaybe() {
   const r = ownerPend && ownerPend.last_result;
   if (!r || !PEND_TEXT[r.state]) return;
+  // 1.72.5: just published and the files on disk are that new version: start it now (the "已發佈" notice shows once it is up)
+  if (r.state === 'published' && ownerPend.disk === r.version && S.st && S.st.version !== r.version && Date.now() / 1000 - r.at < 30 * 60) {
+    ownerRestartInto(r.version);
+    return;
+  }
   const seen = Number(lsGet(PEND_SEEN) || 0);
   if (r.at <= seen || Date.now() / 1000 - r.at > 3 * 86400) return;          // shown once; an old one is not brought up again
   ownerResultBar(r);
+}
+let ownerRestarting = false;
+async function ownerRestartInto(version) {
+  if (ownerRestarting) return;
+  ownerRestarting = true;
+  document.getElementById('pendresult')?.remove();
+  const bar = h('div', { id: 'pendresult', class: 'updatebar pend-ok', role: 'status' },
+    h('span', null, h('b', null, `✓ Tallomi ${version} 已發佈`), '　正在重新啟動 Tallomi，換成新版本…'));
+  const main = document.querySelector('main.main');
+  if (main) main.prepend(bar);
+  try { await api('POST', '/api/owner-pending/restart'); } catch (e) {
+    ownerRestarting = false;
+    bar.replaceChildren(h('span', null, h('b', null, `✓ Tallomi ${version} 已發佈`), `　${(e && e.message) || '沒辦法自動重新啟動'}。結束 Tallomi 再打開，就會是新版本。`),
+      h('button', { class: 'btn sm', type: 'button', onclick: () => bar.remove() }, '知道了'));
+    return;
+  }
+  const t0 = Date.now();
+  for (;;) {
+    await new Promise((res) => setTimeout(res, 800));
+    try {
+      const j = await (await fetch('/api/ping', { cache: 'no-store' })).json();
+      if (j && j.version === version) { location.reload(); return; }
+    } catch (e) { /* restarting */ }
+    if (Date.now() - t0 > 60000) {
+      bar.replaceChildren(h('span', null, h('b', null, '重新啟動花的時間比預期久'), '　請稍等，或結束 Tallomi 再用蜂巢 T 捷徑打開。'));
+      return;
+    }
+  }
 }
 function ownerResultBar(r) {
   const [title, text, tone] = PEND_TEXT[r.state](r);

@@ -1,12 +1,13 @@
 {
  "app": "pennyworth",
- "version": "1.72.4",
+ "version": "1.72.5",
  "released": "2026-11-27",
- "zip": "Pennyworth-1.72.4.zip",
- "download": "Pennyworth-1.72.4.zip",
- "sha256": "079e5b39e2024ba9675cecbcba0eb8a069f466a5bbbbccafb11e107e1c208ed9",
- "size": 1113967,
+ "zip": "Pennyworth-1.72.5.zip",
+ "download": "Pennyworth-1.72.5.zip",
+ "sha256": "b5d799a53cecaa8db848fc1d52e5217e95a6a572a37c3d54868cb29f542ed062",
+ "size": 1115866,
  "notes": [
+  "報表的圓餅圖：點圖例隱藏某些類別時，上方的收入／支出總額會扣掉隱藏的部分，並顯示扣了多少、全部是多少；百分比也改成佔剩下的比例",
   "側邊欄的「指令面板」按鈕按了沒反應的問題修好了（Ctrl + K 本來就可以用）"
  ],
  "min_version": "0",

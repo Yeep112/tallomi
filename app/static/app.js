@@ -1458,7 +1458,7 @@ function mkChart(canvas, cfg) { chartDefaults(); const c = new Chart(canvas, cfg
 function groupTooltip(groups, base, total) {
   return {
     callbacks: {
-      label: (ctx) => { const v = ctx.parsed.y ?? ctx.parsed; return ` ${num(v, base)} ${base}（${total ? (v / total * 100).toFixed(1) : 0}%）`; },
+      label: (ctx) => { const v = ctx.parsed.y ?? ctx.parsed, t = typeof total === 'function' ? total() : total; return ` ${num(v, base)} ${base}（${t ? (v / t * 100).toFixed(1) : 0}%）`; },
       afterLabel: (ctx) => { const g = groups[ctx.dataIndex]; return [`筆數：${g.count}`, g.accounts.length ? `帳戶：${g.accounts.join('、')}` : '', g.notes.length ? `備註：${g.notes.join('、')}` : ''].filter(Boolean); },
     },
   };
@@ -1466,14 +1466,25 @@ function groupTooltip(groups, base, total) {
 function colorsFor(groups) { return groups.map((g, i) => g.label === '其他' ? OTHER_COLOR : PALETTE[i % PALETTE.length]); }
 
 // The list next to / under each chart: colour dot, the category's own picture, name, amount and share. Click a row (pie) to hide / show its slice.
-function legendList(part, colors, byCategory, base, chart) {
+// 1.72.5: hiding rows also takes them out of the total and the shares (onToggle gets what is left and which rows are shown).
+function legendList(part, colors, byCategory, base, chart, onToggle) {
   const total = part.total;
+  const pcts = [];
+  const pctText = (v, of) => (of ? ` ${(v / of * 100).toFixed(1)}%` : '');
+  const repaint = () => {
+    const shown = part.groups.map((g, i) => chart.getDataVisibility(i));
+    const left = part.groups.reduce((s, g, i) => s + (shown[i] ? g.total : 0), 0);
+    part.groups.forEach((g, i) => { pcts[i].textContent = pctText(g.total, shown[i] ? left : total); });      // a hidden row keeps its share of everything
+    if (onToggle) onToggle(left, shown);
+  };
   const rows = part.groups.map((g, i) => {
     const look = !byCategory || g.label === '其他' ? null : g.label === '轉帳' ? typeChip('transfer') : catChip(g.label, 'sm');
-    const row = h('button', { class: 'lg-row', type: 'button', disabled: !chart, title: chart ? '點一下隱藏／顯示這一塊' : '' },
+    const pct = h('em', null, pctText(g.total, total));
+    pcts.push(pct);
+    const row = h('button', { class: 'lg-row', type: 'button', disabled: !chart, title: chart ? '點一下隱藏／顯示這一塊（總額會扣掉隱藏的）' : '' },
       h('i', { class: 'lg-dot', style: `background:${colors[i]}` }), look, h('span', { class: 'lg-name' }, g.label),
-      h('span', { class: 'lg-val' }, num(g.total, base), h('em', null, total ? ` ${(g.total / total * 100).toFixed(1)}%` : '')));
-    if (chart) row.addEventListener('click', () => { chart.toggleDataVisibility(i); chart.update(); row.classList.toggle('off', !chart.getDataVisibility(i)); });
+      h('span', { class: 'lg-val' }, num(g.total, base), pct));
+    if (chart) row.addEventListener('click', () => { chart.toggleDataVisibility(i); chart.update(); row.classList.toggle('off', !chart.getDataVisibility(i)); repaint(); });
     return row;
   });
   return h('div', { class: 'legend', role: 'list', 'aria-label': '圖例' }, rows);
@@ -1484,20 +1495,32 @@ function drawBreakdown(box, data, kind, byCategory = true) {
     const part = data[key];
     const cv = h('canvas', { role: 'img', 'aria-label': `${title}${kind === 'pie' ? '圓餅圖' : '長條圖'}` });
     const holder = h('div', { class: 'legend-slot' });
+    const totalEl = h('span', { class: `total ${tone}` }, num(part.total, base), h('span', { class: 'ccy' }, base));
+    const note = h('p', { class: 'hidden-note', hidden: true });
+    let shownTotal = part.total;
+    // 1.72.5: rows hidden in the legend are taken out of the total; the note says how much was taken out and what everything comes to
+    const onToggle = (left, shown) => {
+      shownTotal = left;
+      const off = shown.filter((x) => !x).length;
+      totalEl.replaceChildren(num(left, base), h('span', { class: 'ccy' }, base));
+      totalEl.title = off ? `全部 ${num(part.total, base)} ${base}` : '';
+      note.hidden = !off;
+      note.textContent = off ? `已扣除隱藏的 ${off} 項（${num(part.total - left, base)}）・全部 ${num(part.total, base)} ${base}` : '';
+    };
     box.append(h('div', { class: 'chart-box' },
-      h('h2', null, title, h('span', { class: `total ${tone}` }, num(part.total, base), h('span', { class: 'ccy' }, base))),
+      h('h2', null, title, totalEl), note,
       part.groups.length ? h('div', { class: 'chart-wrap' }, cv) : h('div', { class: 'empty' }, `這段期間沒有${title}紀錄`), holder));
     if (!part.groups.length) continue;
     const labels = part.groups.map((g) => g.label), vals = part.groups.map((g) => g.total), colors = colorsFor(part.groups);
     let chart;
     if (kind === 'pie') {
       chart = mkChart(cv, { type: 'doughnut', data: { labels, datasets: [{ data: vals, backgroundColor: colors, borderColor: css('--surface'), borderWidth: 2 }] },
-        options: { maintainAspectRatio: false, cutout: '55%', plugins: { legend: { display: false }, tooltip: groupTooltip(part.groups, base, part.total) } } });
+        options: { maintainAspectRatio: false, cutout: '55%', plugins: { legend: { display: false }, tooltip: groupTooltip(part.groups, base, () => shownTotal) } } });
     } else {
       mkChart(cv, { type: 'bar', data: { labels, datasets: [{ data: vals, backgroundColor: colors, borderRadius: 3 }] },
         options: { maintainAspectRatio: false, plugins: { legend: { display: false }, tooltip: groupTooltip(part.groups, base, part.total) }, scales: { y: yAxis() } } });
     }
-    holder.append(legendList(part, colors, byCategory, base, chart));
+    holder.append(legendList(part, colors, byCategory, base, chart, onToggle));
   }
 }
 
